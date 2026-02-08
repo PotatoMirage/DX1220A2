@@ -20,11 +20,7 @@
 #include "SceneMaze.h"
 #include "SceneQueen.h"
 #include "SceneTurn.h"
-#include "SceneGraph_Week09.h"
-#include "SceneGraph_Week12.h"
-#include "SceneHex.h"
-#include "SceneReversi.h"
-#include "SceneFlappyBird.h"
+#include "SceneSandbox.h"
 
 GLFWwindow* m_window;
 const unsigned char FPS = 60; // FPS of this game
@@ -109,6 +105,7 @@ bool Application::LoadScene()
 		std::cout << "13. Week 13. SceneHex" << std::endl;
 		std::cout << "14. Week 14. SceneReversi" << std::endl;
 		std::cout << "15. Week 16. SceneFlappyBird" << std::endl;
+		std::cout << "16. Assignment 1" << std::endl;
 		std::cout << "0. Exit" << std::endl;
 		std::cout << "Enter your choice: ";
 
@@ -169,27 +166,27 @@ bool Application::LoadScene()
 			break;
 		case 11:
 			std::cout << "You selected SceneGraph_Week09.\n";
-			m_scene = new SceneGraph_Week09();
 			bContinue = false;
 			break;
 		case 12:
 			std::cout << "You selected SceneGraph_Week12.\n";
-			m_scene = new SceneGraph_Week12();
 			bContinue = false;
 			break;
 		case 13:
 			std::cout << "You selected SceneHex.\n";
-			m_scene = new SceneHex();
 			bContinue = false;
 			break;
 		case 14:
 			std::cout << "You selected SceneReversi.\n";
-			m_scene = new SceneReversi();
 			bContinue = false;
 			break;
 		case 15:
 			std::cout << "You selected SceneFlappyBird.\n";
-			m_scene = new SceneFlappyBird();
+			bContinue = false;
+			break;
+		case 16:
+			std::cout << "You selected SceneAssignment1.\n";
+			m_scene = new SceneSandbox();
 			bContinue = false;
 			break;
 		case 0:
@@ -228,9 +225,16 @@ void Application::Init()
 
 
 	//Create a window and create its OpenGL context
+	
 	m_width = 1000;
 	m_height = 600;
 	m_window = glfwCreateWindow(m_width, m_height, "AI for Games", NULL, NULL);
+	/*
+	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	m_width = mode->width;
+	m_height = mode->height;
+	m_window = glfwCreateWindow(m_width, m_height, "AI for Games", monitor, NULL);*/
 
 	//If the window couldn't be created
 	if (!m_window)

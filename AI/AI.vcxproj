@@ -142,10 +142,6 @@
     <ClCompile Include="Source\PostOffice.cpp" />
     <ClCompile Include="Source\SceneBase.cpp" />
     <ClCompile Include="Source\SceneData.cpp" />
-    <ClCompile Include="Source\SceneFlappyBird.cpp" />
-    <ClCompile Include="Source\SceneGraph_Week09.cpp" />
-    <ClCompile Include="Source\SceneGraph_Week12.cpp" />
-    <ClCompile Include="Source\SceneHex.cpp" />
     <ClCompile Include="Source\SceneKnight.cpp" />
     <ClCompile Include="Source\SceneMaze.cpp" />
     <ClCompile Include="Source\SceneMovement_Week01.cpp" />
@@ -154,7 +150,7 @@
     <ClCompile Include="Source\SceneMovement_Week04.cpp" />
     <ClCompile Include="Source\SceneMovement_Week05.cpp" />
     <ClCompile Include="Source\SceneQueen.cpp" />
-    <ClCompile Include="Source\SceneReversi.cpp" />
+    <ClCompile Include="Source\SceneSandbox.cpp" />
     <ClCompile Include="Source\SceneTicTacToe.cpp" />
     <ClCompile Include="Source\SceneTurn.cpp" />
     <ClCompile Include="Source\shader.cpp" />
@@ -162,6 +158,7 @@
     <ClCompile Include="Source\StateMachine.cpp" />
     <ClCompile Include="Source\StatesFish.cpp" />
     <ClCompile Include="Source\StatesFishFood.cpp" />
+    <ClCompile Include="Source\StatesSandbox.cpp" />
     <ClCompile Include="Source\StatesShark.cpp" />
     <ClCompile Include="Source\Utility.cpp" />
   </ItemGroup>
@@ -185,10 +182,6 @@
     <ClInclude Include="Source\Scene.h" />
     <ClInclude Include="Source\SceneBase.h" />
     <ClInclude Include="Source\SceneData.h" />
-    <ClInclude Include="Source\SceneFlappyBird.h" />
-    <ClInclude Include="Source\SceneGraph_Week09.h" />
-    <ClInclude Include="Source\SceneGraph_Week12.h" />
-    <ClInclude Include="Source\SceneHex.h" />
     <ClInclude Include="Source\SceneKnight.h" />
     <ClInclude Include="Source\SceneMaze.h" />
     <ClInclude Include="Source\SceneMovement_Week01.h" />
@@ -197,7 +190,7 @@
     <ClInclude Include="Source\SceneMovement_Week04.h" />
     <ClInclude Include="Source\SceneMovement_Week05.h" />
     <ClInclude Include="Source\SceneQueen.h" />
-    <ClInclude Include="Source\SceneReversi.h" />
+    <ClInclude Include="Source\SceneSandbox.h" />
     <ClInclude Include="Source\SceneTicTacToe.h" />
     <ClInclude Include="Source\SceneTurn.h" />
     <ClInclude Include="Source\shader.hpp" />
@@ -205,6 +198,7 @@
     <ClInclude Include="Source\StateMachine.h" />
     <ClInclude Include="Source\StatesFish.h" />
     <ClInclude Include="Source\StatesFishFood.h" />
+    <ClInclude Include="Source\StatesSandbox.h" />
     <ClInclude Include="Source\StatesShark.h" />
     <ClInclude Include="Source\Utility.h" />
     <ClInclude Include="Source\Vertex.h" />

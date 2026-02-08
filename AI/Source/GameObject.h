@@ -25,6 +25,21 @@ struct GameObject : public ObjectBase
 		GO_NPC,
 		GO_BIRD,
 		GO_PIPE,
+		//Assignment 1
+		GO_WORKER,
+		GO_SOLDIER,
+		GO_QUEEN,
+		GO_STRONG_ANT_WORKER,
+		GO_STRONG_ANT_SOLDIER,
+		GO_STRONG_ANT_QUEEN,
+		GO_HEALER,
+		GO_SCOUT,
+		GO_TANK,
+		GO_FOOD,
+		GO_NEST,
+		GO_ELITE_GUARD,
+		GO_PHEROMONE,
+
 		GO_TOTAL, //must be last
 	};
 	enum STATE
@@ -34,6 +49,9 @@ struct GameObject : public ObjectBase
 		STATE_FULL,
 		STATE_HUNGRY,
 		STATE_DEAD,
+
+		//Assignment 1
+
 	};
 	GAMEOBJECT_TYPE type;
 	Vector3 pos;
@@ -46,6 +64,7 @@ struct GameObject : public ObjectBase
 	int steps;
 	float energy;
 	float moveSpeed;
+	float baseSpeed;
 	float countDown;
 	STATE currState;
 	GameObject *nearest;
@@ -65,6 +84,7 @@ struct GameObject : public ObjectBase
 	std::vector<bool> visited;
 	std::vector<MazePt> stack; //for dfs
 	std::vector<MazePt> path;  //for storing path
+	std::vector<MazePt> pathHistory;
 	MazePt curr;
 
 	//week 12
@@ -82,6 +102,30 @@ struct GameObject : public ObjectBase
 	~GameObject();
 
 	bool Handle(Message* message);
+
+	//Assignment 1
+	int teamID; // 0 = speedy Ant Colony, 1 = Strong Ant Colony
+	float attackPower;
+	float maxHealth;
+	float health;
+	float detectionRange;
+	float attackRange;
+	float gatherTimer;
+	int carriedResources;
+	Vector3 homeBase;
+	Vector3 targetResource;
+	GameObject* targetEnemy;
+	bool isCarryingResource;
+	float spawnCooldown;
+	int unitsSpawned;
+	Vector3 viewDir;
+	GameObject* targetAlly;
+	GameObject* targetFoodItem;
+	int resourceCount;
+	int harvesterCount;
+	bool isMarked;
+	Vector3 prevPos;
+	float idleTimer;
 };
 
 #endif

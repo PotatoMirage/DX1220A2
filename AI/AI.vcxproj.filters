@@ -101,19 +101,10 @@
     <ClCompile Include="Source\SceneTurn.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\SceneGraph_Week09.cpp">
+    <ClCompile Include="Source\StatesSandbox.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\SceneGraph_Week12.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\SceneHex.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\SceneFlappyBird.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\SceneReversi.cpp">
+    <ClCompile Include="Source\SceneSandbox.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -229,19 +220,10 @@
     <ClInclude Include="Source\SceneTurn.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\SceneGraph_Week09.h">
+    <ClInclude Include="Source\StatesSandbox.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\SceneGraph_Week12.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\SceneHex.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\SceneReversi.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\SceneFlappyBird.h">
+    <ClInclude Include="Source\SceneSandbox.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

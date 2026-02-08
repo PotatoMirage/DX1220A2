@@ -12,7 +12,31 @@ GameObject::GameObject(GAMEOBJECT_TYPE typeValue)
 	nearest(NULL),
 	nextState(nullptr),
 	currentState(nullptr),
-	currNode(0)
+	currNode(0),
+
+	//Assignment 1
+	teamID(-1),
+	attackPower(1.f),
+	maxHealth(10.f),
+	health(10.f),
+	detectionRange(5.f),
+	attackRange(1.f),
+	gatherTimer(0.f),
+	carriedResources(0),
+	isCarryingResource(false),
+	targetEnemy(nullptr),
+	spawnCooldown(0.f),
+	unitsSpawned(0),
+
+	targetAlly(nullptr),
+	targetFoodItem(nullptr),
+	targetResource(0, 0, 0),
+	viewDir(1, 0, 0),
+	resourceCount(0),
+	harvesterCount(0),
+	isMarked(false),
+	prevPos(0, 0, 0),
+	idleTimer(0.f)
 {
 	static int count = 0;
 	id = ++count;

@@ -91,4 +91,111 @@ struct MessageEvolve : public Message
 	GameObject* go;
 };
 
+//Assignment 1 stuff
+
+struct MessageSpawnUnit : public Message
+{
+	enum UNIT_TYPE
+	{
+		UNIT_SPEEDY_ANT_WORKER,
+		UNIT_SPEEDY_ANT_SOLDIER,
+		UNIT_STRONG_ANT_WORKER,
+		UNIT_STRONG_ANT_SOLDIER,
+		UNIT_HEALER,
+        UNIT_SCOUT,
+        UNIT_TANK,
+		UNIT_PHEROMONE
+	};
+	MessageSpawnUnit(GameObject* goValue, UNIT_TYPE unitType, Vector3 spawnPos)
+		: spawner(goValue), type(unitType), position(spawnPos) {
+	}
+	virtual ~MessageSpawnUnit() {}
+
+	GameObject* spawner;
+	UNIT_TYPE type;
+	Vector3 position;
+};
+
+struct MessageResourceFound : public Message
+{
+	MessageResourceFound(GameObject* finder, Vector3 resourcePos, int team)
+		: discoverer(finder), position(resourcePos), teamID(team) {
+	}
+	virtual ~MessageResourceFound() {}
+
+	GameObject* discoverer;
+	Vector3 position;
+	int teamID;
+};
+
+struct MessageEnemySpotted : public Message
+{
+	MessageEnemySpotted(GameObject* spotter, GameObject* target, int team)
+		: scout(spotter), enemy(target), teamID(team) {
+	}
+	virtual ~MessageEnemySpotted() {}
+
+	GameObject* scout;
+	GameObject* enemy;
+	int teamID;
+};
+
+struct MessageRequestHelp : public Message
+{
+	MessageRequestHelp(GameObject* caller, Vector3 pos, int team)
+		: requester(caller), position(pos), teamID(team) {
+	}
+	virtual ~MessageRequestHelp() {}
+
+	GameObject* requester;
+	Vector3 position;
+	int teamID;
+};
+
+struct MessageResourceDelivered : public Message
+{
+	MessageResourceDelivered(GameObject* deliverer, int amount, int team)
+		: worker(deliverer), resourceAmount(amount), teamID(team) {
+	}
+	virtual ~MessageResourceDelivered() {}
+
+	GameObject* worker;
+	int resourceAmount;
+	int teamID;
+};
+
+struct MessageUnitDied : public Message
+{
+	MessageUnitDied(GameObject* deceased, int team, GameObject::GAMEOBJECT_TYPE unitType)
+		: unit(deceased), teamID(team), type(unitType) {
+	}
+	virtual ~MessageUnitDied() {}
+
+	GameObject* unit;
+	int teamID;
+	GameObject::GAMEOBJECT_TYPE type;
+};
+
+struct MessageTerritoryClaimed : public Message
+{
+	MessageTerritoryClaimed(int team, Vector3 pos)
+		: teamID(team), position(pos) {
+	}
+	virtual ~MessageTerritoryClaimed() {}
+
+	int teamID;
+	Vector3 position;
+};
+
+struct MessageQueenThreat : public Message
+{
+	MessageQueenThreat(GameObject* queenUnit, int team)
+		: queen(queenUnit), teamID(team) {
+	}
+	virtual ~MessageQueenThreat() {}
+
+	GameObject* queen;
+	int teamID;
+};
+
 #endif
