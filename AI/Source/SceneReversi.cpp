@@ -60,18 +60,17 @@ void SceneReversi::Reset()
 	m_winner = WHO_CONTENT::WHO_NONE;
 	m_black = m_white = 0;
 	bAutoPlay = false;
+
 	//empty the grid
 	std::fill(m_grid.begin(), m_grid.end(), WHO_CONTENT::WHO_NONE);
+
 	//place 4 pieces onto the board
 	int minIdx = m_noGrid / 2 - 1; //calc indices for the center of the board
-	int maxIdx = m_noGrid / 2; //calc indices for the center of the board
+	int maxIdx = m_noGrid / 2 ;    //calc indices for the center of the board
 	m_grid[GetIndex(minIdx, minIdx)] = WHO_CONTENT::WHO_BLACK;
 	m_grid[GetIndex(maxIdx, maxIdx)] = WHO_CONTENT::WHO_BLACK;
 	m_grid[GetIndex(maxIdx, minIdx)] = WHO_CONTENT::WHO_WHITE;
 	m_grid[GetIndex(minIdx, maxIdx)] = WHO_CONTENT::WHO_WHITE;
-	
-
-
 }
 
 bool SceneReversi::IsIndexValid(int index) const
@@ -170,10 +169,7 @@ int SceneReversi::Count(std::vector<WHO_CONTENT>& grid, bool black)
 {
 	//Exercise Week 14_15
 	//6.	Implement Count() - count number of black or white seeds
-	return std::count(grid.begin(), grid.end(), black ? WHO_CONTENT::WHO_BLACK :
-		WHO_CONTENT::WHO_WHITE);
-
-
+	return std::count(grid.begin(), grid.end(), black ? WHO_CONTENT::WHO_BLACK : WHO_CONTENT::WHO_WHITE);
 }
 
 bool SceneReversi::CheckGotMove(std::vector<WHO_CONTENT>& grid, bool black)
@@ -189,9 +185,8 @@ bool SceneReversi::CheckGotMove(std::vector<WHO_CONTENT>& grid, bool black)
 		if (Move(tempGrid, black, index))
 			return true; //index is a valid move. thus, a move is available
 	}
+
 	return false;
-
-
 }
 
 //returns the index of the move that ai will make
@@ -203,6 +198,7 @@ int SceneReversi::GetAIDecision(std::vector<WHO_CONTENT>& grid, bool black)
 	std::vector<WHO_CONTENT> board = grid; //makes a copy of grid, we do not make changes to the real board until later
 	size_t size = board.size();
 	int move = -1; //-1 means no move is available
+
 	//minimax player wants to maximize score for itself
 	//in the case of this demo, the minimax player is white
 	int bestScore = INT_MIN;
@@ -212,10 +208,9 @@ int SceneReversi::GetAIDecision(std::vector<WHO_CONTENT>& grid, bool black)
 		{
 			//compute the score associated with this branch using minimax
 			int score = MinMax(board, !black, false, iMinMaxDepth);
-			std::cout << (black ? "Black" : "White") << " score: " << score <<
-				std::endl;
-			std::cout << " " << (black ? "Black " : "White ") << "move: " << index
-				<< std::endl;
+			std::cout << (black ? "Black" : "White") << " score: " << score << std::endl;
+			std::cout << "    " << (black ? "Black " : "White ") << "move: " << index << std::endl;
+
 			//take note of the best score out of all possible moves
 			if (score > bestScore)
 			{
@@ -231,13 +226,13 @@ int SceneReversi::GetAIDecision(std::vector<WHO_CONTENT>& grid, bool black)
 					move = index;
 				}
 			}
+
 			board = grid; //reset board
 		}
 	}
+
 	std::cout << ">>>>>>" << (black ? "Black " : "White ") << "chose " << move << std::endl;
 	return move;
-
-
 }
 
 int SceneReversi::MinMax(std::vector<WHO_CONTENT>& grid, bool black, bool max, int depth)
@@ -250,11 +245,12 @@ int SceneReversi::MinMax(std::vector<WHO_CONTENT>& grid, bool black, bool max, i
 		//char turn = m_bBlackTurn ? 'B' : 'W';
 		//std::cout << "COUNT(" << turn << "): " << Count(grid, m_bBlackTurn) << std::endl;
 		//return Count(grid, m_bBlackTurn); //count pieces belonging to minimax player
-		return CalculateScore(grid, m_bBlackTurn); //count pieces belonging to minimax	player
+		return CalculateScore(grid, m_bBlackTurn); //count pieces belonging to minimax player
 	}
+
 	size_t size = grid.size();
 	int best = max ? INT_MIN : INT_MAX; //minimax player aims to maximize score. the opponent(human player) aims to minimize score
-		std::vector<WHO_CONTENT> board = grid; //make a copy of board
+	std::vector<WHO_CONTENT> board = grid; //make a copy of board
 	for (size_t i = 0; i < size; ++i)
 	{
 		// for each valid move
@@ -265,12 +261,12 @@ int SceneReversi::MinMax(std::vector<WHO_CONTENT>& grid, bool black, bool max, i
 				best = Math::Max(best, val);
 			else //assume opponent always minimizes score
 				best = Math::Min(best, val);
+
 			board = grid; //reset board for next sibling
 		}
 	}
+
 	return best;
-
-
 }
 
 void SceneReversi::Update(double dt)
@@ -344,8 +340,6 @@ void SceneReversi::Update(double dt)
 						//white's turn is handled elsewhere
 					}
 				}
-
-
 			}
 		}
 		else if (bLButtonState && !Application::IsMousePressed(0))
@@ -422,13 +416,16 @@ void SceneReversi::Update(double dt)
 	{
 		m_black = Count(m_grid, true);
 		m_white = Count(m_grid, false);
+
 		if (!CheckGotMove(m_grid, m_bBlackTurn))
 		{
 			m_bBlackTurn = !m_bBlackTurn; //no move available. pass the turn.
+
 			//neither player could make a move. game ends.
 			if (!CheckGotMove(m_grid, m_bBlackTurn))
 			{
 				m_bGameOver = true;
+
 				if (m_black > m_white)
 					m_winner = WHO_CONTENT::WHO_BLACK;
 				else if (m_white > m_black)
@@ -436,8 +433,6 @@ void SceneReversi::Update(double dt)
 			}
 		}
 	}
-
-
 }
 
 void SceneReversi::Render()
@@ -471,8 +466,6 @@ void SceneReversi::Render()
 	else if (m_noGrid == 8)
 		RenderMesh(meshList[GEO_REVERSIBOARD], false);
 	modelStack.PopMatrix();
-	
-
 
 	// Exercise Week 14_15
 	//b.	Render black and white seeds without GameObject
@@ -483,16 +476,12 @@ void SceneReversi::Render()
 			if (m_grid[GetIndex(col, row)] == WHO_NONE)
 				continue;
 			modelStack.PushMatrix();
-			modelStack.Translate(col * m_gridSize + m_gridOffset, row * m_gridSize +
-				m_gridOffset, 0.f);
+			modelStack.Translate(col * m_gridSize + m_gridOffset, row * m_gridSize + m_gridOffset, 0.f);
 			modelStack.Scale(m_gridSize, m_gridSize, 1.f);
-			RenderMesh(meshList[m_grid[GetIndex(col, row)] == WHO_CONTENT::WHO_BLACK ?
-				GEO_REVERSIBLACK : GEO_REVERSIWHITE], false);
+			RenderMesh(meshList[m_grid[GetIndex(col, row)] == WHO_CONTENT::WHO_BLACK ? GEO_REVERSIBLACK : GEO_REVERSIWHITE], false);
 			modelStack.PopMatrix();
 		}
 	}
-	
-
 
 	//On screen text
 	std::ostringstream ss;
@@ -511,8 +500,6 @@ void SceneReversi::Render()
 	ss.precision(5);
 	ss << "B: " << m_black << " W: " << m_white;
 	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0, 1, 0), 3, 50, 12);
-	
-
 
 	// Exercise Week 14_15
 	//d.	Render whose turn (black or white)
@@ -520,8 +507,6 @@ void SceneReversi::Render()
 	ss.precision(5);
 	ss << "Turn: " << (m_bBlackTurn ? "Black" : "White");
 	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0, 1, 0), 3, 50, 15);
-	
-
 
 	if (bAutoPlay == true)
 	{
@@ -543,9 +528,7 @@ void SceneReversi::Render()
 			ss << "Winner: " << (m_winner == WHO_BLACK ? "Black" : "White");
 	}
 	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0, 1, 0), 3, 50, 9);
-	
 
-	
 	RenderTextOnScreen(meshList[GEO_TEXT], "Reversi (R to reset)", Color(0, 1, 0), 3, 50, 0);
 }
 

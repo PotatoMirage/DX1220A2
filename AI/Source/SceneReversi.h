@@ -26,15 +26,11 @@ public:
 	// Exercise Week 14_15
 	//1. SceneReversi.h, add the following methods.
 	bool Move(std::vector<WHO_CONTENT>& grid, bool black, int index);
+	int Count(std::vector<WHO_CONTENT>& grid, bool black);
+	bool CheckGotMove(std::vector<WHO_CONTENT>& grid, bool black);
+	int GetAIDecision(std::vector<WHO_CONTENT>& grid, bool black);
+	int MinMax(std::vector<WHO_CONTENT>& grid, bool black, bool max, int depth);
 	int CalculateScore(std::vector<WHO_CONTENT>& grid, bool black);
-	int
-		Count(std::vector<WHO_CONTENT>& grid, bool black);
-	bool CheckGotMove(std::vector<WHO_CONTENT>& grid, bool black); int
-		GetAIDecision(std::vector<WHO_CONTENT>& grid, bool black); int
-		MinMax(std::vector<WHO_CONTENT>& grid, bool black, bool max, int depth);
-	
-
-	
 
 protected:
 	int GetIndex(int x, int y) const;
