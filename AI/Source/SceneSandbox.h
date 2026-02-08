@@ -35,7 +35,7 @@ protected:
 
 	// Game state
 	std::vector<GameObject*> m_goList;
-	std::map<int, std::vector<GameObject*>> m_spatialGrid;
+	std::vector<std::vector<GameObject*>> m_spatialGrid;
 	float m_speed;
 	float m_worldWidth;
 	float m_worldHeight;
@@ -79,5 +79,8 @@ protected:
 	float m_updateTimer;
 	int m_updateCycle;
 	bool m_coloniesDetected;
+
+	std::vector<bool> m_bfsVisited;
+	std::vector<int> m_bfsParent;
 };
 

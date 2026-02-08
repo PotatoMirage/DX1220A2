@@ -115,11 +115,41 @@ void StateWorkerGathering::Update(double dt) {
 }
 void StateWorkerGathering::Exit() { if (m_go->targetFoodItem) m_go->targetFoodItem->harvesterCount--; }
 
-StateWorkerFleeing::StateWorkerFleeing(const std::string& stateID, GameObject* go) : State(stateID), m_go(go) {}
+StateWorkerFleeing::StateWorkerFleeing(const std::string& stateID, GameObject* go) : State(stateID), m_go(go), fleeTimer(0.f) {}
 StateWorkerFleeing::~StateWorkerFleeing() {}
-void StateWorkerFleeing::Enter() { m_go->moveSpeed = m_go->baseSpeed * 1.5f; PostOffice::GetInstance()->Send("Scene", new MessageRequestHelp(m_go, m_go->pos, m_go->teamID)); }
-void StateWorkerFleeing::Update(double dt) { if (m_go->targetEnemy && m_go->targetEnemy->active) { Vector3 dir = m_go->pos - m_go->targetEnemy->pos; if (dir.LengthSquared() > 0.1f) { dir.Normalize(); m_go->target = GetRandomGridPosAround(m_go->pos + dir * SceneData::GetInstance()->GetGridSize() * 3.f, 1); } else { m_go->target = m_go->homeBase; } if ((m_go->pos - m_go->targetEnemy->pos).LengthSquared() > m_go->detectionRange * m_go->detectionRange * 4.f) { m_go->targetEnemy = nullptr; m_go->sm->SetNextState("Idle"); } } else { m_go->targetEnemy = nullptr; m_go->sm->SetNextState("Idle"); } }
-void StateWorkerFleeing::Exit() {}
+void StateWorkerFleeing::Enter() { m_go->moveSpeed = m_go->baseSpeed * 1.5f; PostOffice::GetInstance()->Send("Scene", new MessageRequestHelp(m_go, m_go->pos, m_go->teamID)); fleeTimer = 0.f;}
+void StateWorkerFleeing::Update(double dt)
+{
+	if (m_go->targetEnemy && m_go->targetEnemy->active)
+	{
+		fleeTimer -= (float)dt;
+		bool isStuck = m_go->path.empty() && (m_go->target - m_go->pos).LengthSquared() > 1.0f;
+		if (fleeTimer <= 0.f || isStuck)
+		{
+			Vector3 dir = m_go->pos - m_go->targetEnemy->pos;
+			if (dir.LengthSquared() > 0.1f)
+			{
+				dir.Normalize();
+				m_go->target = GetRandomGridPosAround(m_go->pos + dir * SceneData::GetInstance()->GetGridSize() * 3.f, 2);
+			}
+			else
+			{
+				m_go->target = m_go->homeBase;
+			}
+			fleeTimer = 1.0f;
+		}
+		if ((m_go->pos - m_go->targetEnemy->pos).LengthSquared() > m_go->detectionRange * m_go->detectionRange * 4.f)
+		{
+			m_go->targetEnemy = nullptr;
+			m_go->sm->SetNextState("Idle");
+		}
+	}
+	else
+	{
+		m_go->targetEnemy = nullptr;
+		m_go->sm->SetNextState("Idle");
+	}
+}void StateWorkerFleeing::Exit() {}
 
 // ================= SOLDIER STATES =================
 StateSoldierPatrolling::StateSoldierPatrolling(const std::string& stateID, GameObject* go) : State(stateID), m_go(go), patrolTimer(0.f) {}
@@ -336,24 +366,23 @@ void StateScoutReturnToColony::Enter() {
 
 	// Initialize last trail position to current position
 	lastTrailPos = m_go->pos;
-
+	dropCooldown = 0.f;
 	if (m_go->targetEnemy) PostOffice::GetInstance()->Send("Scene", new MessageEnemySpotted(m_go, m_go->targetEnemy, m_go->teamID));
 }
 void StateScoutReturnToColony::Update(double dt) {
 	m_go->target = m_go->homeBase;
-
+	if (dropCooldown > 0.f) dropCooldown -= (float)dt;
 	// --- GAP TRAIL LOGIC ---
 	if (m_go->targetFoodItem != nullptr) {
 		// Calculate distance squared from the last dropped pheromone
 		float distSq = (m_go->pos - lastTrailPos).LengthSquared();
-
-		// Threshold: Drop a trail every 1.5 units (GAP)
-		// Increase 1.5f to make the gap larger, decrease to make it smaller
 		float trailSpacing = 1.5f;
 
-		if (distSq > trailSpacing * trailSpacing) {
+		if (distSq > trailSpacing * trailSpacing && dropCooldown <= 0.f) {
 			PostOffice::GetInstance()->Send("Scene", new MessageSpawnUnit(m_go, MessageSpawnUnit::UNIT_PHEROMONE, m_go->pos));
-			lastTrailPos = m_go->pos; // Update the last drop position
+
+			lastTrailPos = m_go->pos;
+			dropCooldown = 0.2f;
 		}
 	}
 	// -----------------------

@@ -126,6 +126,7 @@ struct GameObject : public ObjectBase
 	bool isMarked;
 	Vector3 prevPos;
 	float idleTimer;
+	float repathTimer;
 };
 
 #endif

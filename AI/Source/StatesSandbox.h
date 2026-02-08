@@ -43,6 +43,7 @@ public:
 class StateWorkerFleeing : public State
 {
 	GameObject* m_go;
+	float fleeTimer;
 public:
 	StateWorkerFleeing(const std::string& stateID, GameObject* go);
 	virtual ~StateWorkerFleeing();
@@ -192,8 +193,9 @@ public:
 class StateScoutReturnToColony : public State {
 	GameObject* m_go;
 	Vector3 lastTrailPos;
+	float dropCooldown;
 public:
-	StateScoutReturnToColony(const std::string& stateID, GameObject* go) : State(stateID), m_go(go) {}
+	StateScoutReturnToColony(const std::string& stateID, GameObject* go) : State(stateID), m_go(go), dropCooldown(0.f) {}
 	virtual ~StateScoutReturnToColony() {}
 	virtual void Enter();
 	virtual void Update(double dt);

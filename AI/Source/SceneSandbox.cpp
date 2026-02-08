@@ -41,7 +41,7 @@ void SceneSandbox::Init()
 	m_noGrid = 30;
 	m_gridSize = m_worldHeight / m_noGrid;
 	m_gridOffset = m_gridSize / 2;
-
+	m_spatialGrid.resize(m_noGrid * m_noGrid);
 	m_wallGrid.assign(m_noGrid * m_noGrid, false);
 	m_foodGrid.assign(m_noGrid * m_noGrid, false);
 
@@ -281,6 +281,13 @@ std::vector<MazePt> SceneSandbox::FindPath(MazePt start, MazePt end)
 
 	std::vector<bool> visited(m_noGrid * m_noGrid, false);
 	std::vector<int> parent(m_noGrid * m_noGrid, -1);
+
+	int totalGrid = m_noGrid * m_noGrid;
+	if (m_bfsVisited.size() != totalGrid) {
+		m_bfsVisited.resize(totalGrid);
+		m_bfsParent.resize(totalGrid);
+	}
+	std::fill(m_bfsVisited.begin(), m_bfsVisited.end(), false);
 	std::queue<MazePt> q;
 
 	q.push(start);
@@ -452,14 +459,41 @@ void SceneSandbox::Update(double dt)
 					targetPt = GetNearestVacantNeighbor(MazePt((int)(go->targetFoodItem->pos.x / m_gridSize), (int)(go->targetFoodItem->pos.y / m_gridSize)), MazePt(gridX, gridY));
 				}
 			}
+			if (go->repathTimer > 0.f)
+				go->repathTimer -= (float)dt * m_speed;
 			bool needPath = false;
-			if (go->path.empty()) { if (gridX != targetPt.x || gridY != targetPt.y) needPath = true; }
-			else { MazePt last = go->path.back(); if (last.x != targetPt.x || last.y != targetPt.y) needPath = true; }
+			if (go->path.empty())
+			{
+				if (gridX != targetPt.x || gridY != targetPt.y)
+					needPath = true;
+			}
+			else
+			{
+				MazePt last = go->path.back();
+				if (last.x != targetPt.x || last.y != targetPt.y)
+					needPath = true;
+			}
 
-			if (needPath) {
-				go->path = FindPath(MazePt(gridX, gridY), targetPt);
-				if (go->path.empty()) { go->target = go->pos; }
-				else { Vector3 center = Vector3(gridX * m_gridSize + m_gridOffset, gridY * m_gridSize + m_gridOffset, go->pos.z); if ((go->pos - center).LengthSquared() > 0.05f) { go->path.insert(go->path.begin(), MazePt(gridX, gridY)); } }
+			if (needPath)
+			{
+				if (go->path.empty() || go->repathTimer <= 0.f)
+				{
+					go->path = FindPath(MazePt(gridX, gridY), targetPt);
+
+					if (go->path.empty())
+					{
+						go->target = go->pos;
+					}
+					else
+					{
+						Vector3 center = Vector3(gridX * m_gridSize + m_gridOffset, gridY * m_gridSize + m_gridOffset, go->pos.z);
+						if ((go->pos - center).LengthSquared() > 0.05f)
+						{
+							go->path.insert(go->path.begin(), MazePt(gridX, gridY));
+						}
+					}
+					go->repathTimer = 0.5f;
+				}
 			}
 
 			float step = go->moveSpeed * static_cast<float>(dt) * m_speed;
@@ -531,13 +565,18 @@ void SceneSandbox::DetectNearbyEntities(GameObject* go)
 		{
 			int checkX = gridX + dx;
 			int checkY = gridY + dy;
+
+			// 1. Boundary Check (Crucial for Vector access)
 			if (checkX < 0 || checkX >= m_noGrid || checkY < 0 || checkY >= m_noGrid)
 				continue;
 
+			// 2. Calculate Index
 			int cellKey = checkY * m_noGrid + checkX;
-			if (m_spatialGrid.find(cellKey) == m_spatialGrid.end())
-				continue;
 
+			// 3. REMOVED: if (m_spatialGrid.find(cellKey) == m_spatialGrid.end())
+			// REASON: Vectors always have the index if checkX/Y are valid.
+
+			// 4. Access Vector Directly
 			for (GameObject* other : m_spatialGrid[cellKey])
 			{
 				if (!other->active || other == go)
@@ -669,19 +708,21 @@ bool SceneSandbox::IsInTerritory(Vector3 pos, int teamID) const
 
 void SceneSandbox::UpdateSpatialGrid()
 {
-	m_spatialGrid.clear();
-
-	for (std::vector<GameObject*>::iterator it = m_goList.begin(); it != m_goList.end(); ++it)
+	for (auto& cell : m_spatialGrid)
 	{
-		GameObject* go = (GameObject*)*it;
-		if (!go->active)
-			continue;
+		cell.clear();
+	}
 
-		int gridX = static_cast<int>(go->pos.x / m_gridSize);
-		int gridY = static_cast<int>(go->pos.y / m_gridSize);
-		int cellKey = gridY * m_noGrid + gridX;
-
-		m_spatialGrid[cellKey].push_back(go);
+	for (auto go : m_goList)
+	{
+		if (!go->active) continue;
+		int gridX = (int)(go->pos.x / m_gridSize);
+		int gridY = (int)(go->pos.y / m_gridSize);
+		if (IsWithinBoundary(gridX) && IsWithinBoundary(gridY))
+		{
+			int cellKey = gridY * m_noGrid + gridX;
+			m_spatialGrid[cellKey].push_back(go);
+		}
 	}
 }
 

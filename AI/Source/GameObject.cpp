@@ -36,7 +36,8 @@ GameObject::GameObject(GAMEOBJECT_TYPE typeValue)
 	harvesterCount(0),
 	isMarked(false),
 	prevPos(0, 0, 0),
-	idleTimer(0.f)
+	idleTimer(0.f),
+	repathTimer(0.f)
 {
 	static int count = 0;
 	id = ++count;
