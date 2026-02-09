@@ -16,7 +16,7 @@ SceneSandbox::SceneSandbox()
 	m_redWorkerCount{}, m_redResources{}, m_blueWorkerCount{}, m_blueResources{},
 	m_redQueen{}, m_blueQueen{}, m_simulationTime{}, m_simulationEnded{}, m_winner{}, m_updateTimer{}, m_updateCycle{},
 	m_wallGrid{}, m_foodGrid{}, m_coloniesDetected(false),
-	m_currPhase(PHASE_LOGIC), m_turnNumber(0), m_animationSpeed(5.0f)
+	m_currPhase(PHASE_LOGIC), m_turnNumber(0), m_animationSpeed(5.0f), m_autoTurn(false), m_turnTimer(0.f), m_turnInterval(0.5f)
 {
 }
 
@@ -249,12 +249,34 @@ MazePt SceneSandbox::GetNearestVacantNeighbor(MazePt target, MazePt start)
 	return bestPt;
 }
 
+
 void SceneSandbox::Update(double dt)
 {
 	SceneBase::Update(dt);
 	m_worldHeight = 100.f; m_worldWidth = m_worldHeight * (float)Application::GetWindowWidth() / Application::GetWindowHeight();
 
 	if (Application::IsKeyPressed(VK_END)) m_simulationEnded = true;
+
+	// --- NEW: INPUT HANDLING ---
+	static bool bTKeyState = false;
+	if (Application::IsKeyPressed('T') && !bTKeyState) {
+		bTKeyState = true;
+		m_autoTurn = !m_autoTurn; // Toggle Mode
+	}
+	else if (!Application::IsKeyPressed('T') && bTKeyState) {
+		bTKeyState = false;
+	}
+
+	bool manualNextTurn = false;
+	static bool bSpaceState = false;
+	if (Application::IsKeyPressed(VK_SPACE) && !bSpaceState) {
+		bSpaceState = true;
+		if (!m_autoTurn && m_currPhase == PHASE_LOGIC) manualNextTurn = true;
+	}
+	else if (!Application::IsKeyPressed(VK_SPACE) && bSpaceState) {
+		bSpaceState = false;
+	}
+	// ---------------------------
 
 	if (!m_simulationEnded)
 	{
@@ -264,9 +286,29 @@ void SceneSandbox::Update(double dt)
 		switch (m_currPhase)
 		{
 		case PHASE_LOGIC:
-			ProcessTurnLogic();
-			m_currPhase = PHASE_ANIMATION;
-			break;
+		{
+			bool shouldAdvance = false;
+
+			if (m_autoTurn)
+			{
+				m_turnTimer += (float)dt * m_speed;
+				if (m_turnTimer >= m_turnInterval) {
+					m_turnTimer = 0.f;
+					shouldAdvance = true;
+				}
+			}
+			else
+			{
+				if (manualNextTurn) shouldAdvance = true;
+			}
+
+			if (shouldAdvance)
+			{
+				ProcessTurnLogic();
+				m_currPhase = PHASE_ANIMATION;
+			}
+		}
+		break;
 
 		case PHASE_ANIMATION:
 			bool isStillMoving = ProcessTurnAnimation(dt);
@@ -886,12 +928,40 @@ void SceneSandbox::Render()
 	// Simulation Stats
 	ss.str(""); ss.precision(5);
 	ss << "FPS:" << fps;
-	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0, 1, 0), 3, colX, 54);
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0, 1, 0), 3, 68.f, 54);
 
-	ss.str(""); ss << "Speed: " << m_speed;
-	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0, 1, 0), 2.5f, colX, 52);
-	ss.str(""); ss << std::fixed << std::setprecision(1) << "Time: " << m_simulationTime;
-	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(1, 1, 0), 2.5f, colX, 49);
+	float uiX = 50.f; // Adjusted to be on the right side
+	float uiY = 56.f;
+	float spacing = 2.5f;
+
+	ss.str(""); ss << "=== Turn-based ===";
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(1, 1, 1), 3.0f, uiX, uiY); uiY -= spacing;
+
+	// Mode Display
+	ss.str(""); ss << "Mode: " << (m_autoTurn ? "AUTO" : "MANUAL");
+	Color modeColor = m_autoTurn ? Color(0, 1, 0) : Color(1, 1, 0); // Green for Auto, Yellow for Manual
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), modeColor, 3.0f, uiX, uiY); uiY -= spacing;
+
+	// Turn Info
+	ss.str(""); ss << "Turn: " << m_turnNumber;
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(1, 1, 1), 3.0f, uiX, uiY); uiY -= spacing;
+
+	// Instructions
+	if (!m_autoTurn) {
+		ss.str(""); ss << "Action: Press [SPACE]";
+		RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(1, 0.5f, 0), 2.5f, uiX, uiY); uiY -= spacing;
+	}
+	else {
+		ss.str(""); ss << "Status: Running...";
+		RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.5f, 1, 0.5f), 2.5f, uiX, uiY); uiY -= spacing;
+	}
+
+	uiY -= spacing; // Extra gap
+	ss.str(""); ss << "[T] Toggle Mode";
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX, uiY); uiY -= spacing;
+	// --------------------------
+
+	uiY -= spacing;
 
 	// --- RED ANT COLONY (Team 0) ---
 	ss.str(""); ss << "=== RED ANT COLONY ===";

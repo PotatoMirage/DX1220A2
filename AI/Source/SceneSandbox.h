@@ -37,6 +37,12 @@ protected:
 	int m_turnNumber;
 	float m_animationSpeed; // Speed of visual sliding
 
+	// --- NEW: TURN UI CONTROLS ---
+	bool m_autoTurn;        // True = Timer based, False = Wait for input
+	float m_turnTimer;      // Timer for auto-turn
+	float m_turnInterval;   // Time between turns in auto mode
+	// -----------------------------
+
 	void ProcessTurnLogic();
 	bool ProcessTurnAnimation(double dt);
 	float GetTileCost(int x, int y) const; // Determine move cost
