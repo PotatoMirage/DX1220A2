@@ -66,6 +66,9 @@ void SceneSandbox::Init()
 	m_currPhase = PHASE_LOGIC;
 	m_turnNumber = 1;
 
+	m_currentEvent = EVENT_NONE;
+	m_eventDuration = 0;
+
 	m_redQueen = FetchGO(GameObject::GO_QUEEN); m_redQueen->teamID = 0;
 	m_redQueen->pos.Set(m_gridSize * 3.f + m_gridOffset, m_gridSize * 3.f + m_gridOffset, 0);
 	m_redQueen->homeBase = m_redQueen->pos; m_redQueen->scale.Set(m_gridSize * 1.5f, m_gridSize * 1.5f, 1.f); m_redQueen->maxHealth = 50.f; m_redQueen->health = 50.f; m_redQueen->moveSpeed = 0.f; m_redQueen->detectionRange = m_gridSize * 8.f; m_redQueen->sm = new StateMachine(); m_redQueen->sm->AddState(new StateQueenSpawning("Spawning", m_redQueen)); m_redQueen->sm->AddState(new StateQueenEmergency("Emergency", m_redQueen)); m_redQueen->sm->AddState(new StateQueenCooldown("Cooldown", m_redQueen)); m_redQueen->sm->SetNextState("Spawning");
@@ -354,24 +357,41 @@ void SceneSandbox::Update(double dt)
 
 void SceneSandbox::ProcessTurnLogic()
 {
+	// [NEW] Random Event System
+	// Decrease event timer
+	if (m_eventDuration > 0) {
+		m_eventDuration--;
+		if (m_eventDuration <= 0) {
+			m_currentEvent = EVENT_NONE;
+			std::cout << "Event Ended." << std::endl;
+		}
+	}
+
+	// Trigger Sudden Death after 1000 Turns
+	if (m_turnNumber > 1000) {
+		m_currentEvent = EVENT_SUDDEN_DEATH;
+		TriggerSuddenDeathStrike();
+	}
+	// Small chance to trigger new random event if none is active
+	else if (m_currentEvent == EVENT_NONE) {
+		if (Math::RandIntMinMax(0, 100) < 5) { // 5% chance per turn
+			ProcessRandomEvents();
+		}
+	}
+
 	for (size_t i = 0; i < m_goList.size(); ++i)
 	{
 		GameObject* go = m_goList[i];
 		if (!go->active) continue;
 
-		// --- STRICT TURN COST SYSTEM ---
-		// If unit has cooldown (action points debt), it waits.
 		if (go->countDown > 0.0f) {
 			go->countDown -= 1.0f;
 			if (go->countDown > 0.0f) {
-				// Unit is recovering/traversing
 				continue;
 			}
-			// Cooldown finished this turn, reset and allow action
 			go->countDown = 0.0f;
 		}
 
-		// 1. Perception & State Update
 		DetectNearbyEntities(go);
 
 		if (go->type == GameObject::GO_WORKER && !go->isCarryingResource) FindNearestResource(go);
@@ -380,13 +400,11 @@ void SceneSandbox::ProcessTurnLogic()
 
 		if (go->sm) go->sm->Update(1.0f);
 
-		// 2. Movement Calculation
 		int gridX = static_cast<int>(go->pos.x / m_gridSize);
 		int gridY = static_cast<int>(go->pos.y / m_gridSize);
 		MazePt startPt(gridX, gridY);
 		MazePt targetPt(static_cast<int>(go->target.x / m_gridSize), static_cast<int>(go->target.y / m_gridSize));
 
-		// Adjust Target (Snap to neighbor if target is occupied food)
 		if (go->targetFoodItem != nullptr && go->targetFoodItem->active) {
 			bool shouldSnap = false;
 			if (go->type == GameObject::GO_WORKER && !go->isCarryingResource) shouldSnap = true;
@@ -396,7 +414,6 @@ void SceneSandbox::ProcessTurnLogic()
 			}
 		}
 
-		// Recompute path
 		if ((!go->path.empty() && (go->path.back().x != targetPt.x || go->path.back().y != targetPt.y)) || go->path.empty())
 		{
 			if (gridX != targetPt.x || gridY != targetPt.y) {
@@ -408,7 +425,6 @@ void SceneSandbox::ProcessTurnLogic()
 					go->path = FindPathDFS(startPt, targetPt);
 				}
 				else {
-					// Use A* with Unit-Specific Costs
 					go->path = FindPathAStar(startPt, targetPt, go->type);
 				}
 
@@ -417,7 +433,6 @@ void SceneSandbox::ProcessTurnLogic()
 			}
 		}
 
-		// 3. Execute Move
 		if (!go->path.empty())
 		{
 			MazePt nextStep = go->path.front();
@@ -428,12 +443,8 @@ void SceneSandbox::ProcessTurnLogic()
 			if (go->type == GameObject::GO_WORKER && !go->isCarryingResource)
 				go->pathHistory.push_back(nextStep);
 
-			// --- APPLY COST ---
-			// Calculate cost of entering the specific tile for this specific unit
 			float cost = GetTileCost(nextStep.x, nextStep.y, go->type);
 
-			// Subtract 1 immediately because the unit spends the CURRENT turn moving
-			// The remaining cost becomes the wait time
 			go->countDown = (cost > 1.0f) ? (cost - 1.0f) : 0.0f;
 
 			Vector3 dir = go->target - go->pos;
@@ -442,6 +453,104 @@ void SceneSandbox::ProcessTurnLogic()
 		else
 		{
 			go->target = go->pos;
+		}
+	}
+}
+
+void SceneSandbox::ProcessRandomEvents()
+{
+	int roll = Math::RandIntMinMax(0, 100);
+
+	if (roll < 40) {
+		m_currentEvent = EVENT_HEAVY_RAIN;
+		m_eventDuration = 10; // Lasts 10 turns
+		std::cout << "EVENT: HEAVY RAIN! Movement is slower in mud/forest." << std::endl;
+	}
+	else if (roll < 70) {
+		m_currentEvent = EVENT_EARTHQUAKE;
+		m_eventDuration = 0; // Instantaneous
+		TriggerEarthquake();
+		std::cout << "EVENT: EARTHQUAKE! Terrain has shifted." << std::endl;
+	}
+	else {
+		m_currentEvent = EVENT_PLAGUE;
+		m_eventDuration = 0; // Instantaneous
+		TriggerPlague();
+		std::cout << "EVENT: PLAGUE! Units have taken damage." << std::endl;
+	}
+}
+
+void SceneSandbox::TriggerEarthquake()
+{
+	// Randomly alter 5% of the map
+	int totalCells = m_noGrid * m_noGrid;
+	int changes = totalCells / 20;
+
+	for (int i = 0; i < changes; ++i) {
+		int idx = Math::RandIntMinMax(0, totalCells - 1);
+
+		// Don't modify base perimeters (safety)
+		int x = idx % m_noGrid;
+		int y = idx / m_noGrid;
+		if (x < 6 && y < 6) continue;
+		if (x > m_noGrid - 7 && y > m_noGrid - 7) continue;
+
+		TERRAIN_TYPE current = m_terrainGrid[idx];
+
+		if (current == TERRAIN_WALL) {
+			m_terrainGrid[idx] = TERRAIN_FLOOR; // Walls collapse
+		}
+		else if (current == TERRAIN_FLOOR) {
+			if (Math::RandIntMinMax(0, 1) == 0) m_terrainGrid[idx] = TERRAIN_MUD; // Liquefaction
+			else m_terrainGrid[idx] = TERRAIN_WALL; // Debris
+		}
+	}
+	// Re-verify connectivity so units don't get trapped forever
+	EnsureConnectivity();
+}
+
+void SceneSandbox::TriggerPlague()
+{
+	// Damage random clusters of units
+	for (auto go : m_goList) {
+		if (!go->active) continue;
+		// 15% chance to be hit by plague
+		if (Math::RandIntMinMax(0, 100) < 15) {
+			go->health -= go->maxHealth * 0.3f; // 30% max HP damage
+			if (go->health <= 0) {
+				go->active = false; // Instant death
+				PostOffice::GetInstance()->Send("Scene", new MessageUnitDied(go, go->teamID, go->type));
+			}
+		}
+	}
+}
+
+void SceneSandbox::TriggerSuddenDeathStrike()
+{
+	// Meteor Shower Logic: Pick 3 random impact points per turn
+	for (int i = 0; i < 3; ++i) {
+		int tx = Math::RandIntMinMax(0, m_noGrid - 1);
+		int ty = Math::RandIntMinMax(0, m_noGrid - 1);
+
+		// Blast radius
+		int rad = 2;
+		for (int y = ty - rad; y <= ty + rad; ++y) {
+			for (int x = tx - rad; x <= tx + rad; ++x) {
+				if (IsWithinBoundary(x) && IsWithinBoundary(y)) {
+					// Destroy Terrain
+					int idx = Get1DIndex(x, y);
+					m_terrainGrid[idx] = TERRAIN_MUD; // Crater effect
+
+					// Kill Units
+					for (auto go : m_spatialGrid[idx]) {
+						if (go->active) {
+							go->health = 0;
+							go->active = false;
+							PostOffice::GetInstance()->Send("Scene", new MessageUnitDied(go, go->teamID, go->type));
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -509,6 +618,16 @@ float SceneSandbox::GetTerrainMovementCost(TERRAIN_TYPE type, GameObject::GAMEOB
 		return FLT_MAX; // Impassable
 	default:
 		cost = 2.0f;
+	}
+	if (m_currentEvent == EVENT_HEAVY_RAIN) {
+		// Mud and Forest become extremely difficult to traverse
+		if (type == TERRAIN_MUD || type == TERRAIN_FOREST) {
+			cost *= 2.0f;
+		}
+		// Floor becomes slightly slippery
+		if (type == TERRAIN_FLOOR) {
+			cost += 1.0f;
+		}
 	}
 
 	// --- UNIT SPECIALIZATIONS ---
@@ -1385,6 +1504,17 @@ void SceneSandbox::Render()
 
 	ss.str(""); ss << "=== Turn-based ===";
 	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(1, 1, 1), 3.0f, uiX, uiY); uiY -= spacing;
+
+	if (m_currentEvent != EVENT_NONE) {
+		std::string eventName = "NORMAL";
+		Color eventColor(1, 1, 1);
+		if (m_currentEvent == EVENT_HEAVY_RAIN) { eventName = "HEAVY RAIN"; eventColor.Set(0.5f, 0.5f, 1.0f); }
+		else if (m_currentEvent == EVENT_SUDDEN_DEATH) { eventName = "SUDDEN DEATH"; eventColor.Set(1.0f, 0.0f, 0.0f); }
+
+		ss.str(""); ss << "EVENT: " << eventName;
+		if (m_eventDuration > 0) ss << " (" << m_eventDuration << ")";
+		RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), eventColor, 3.0f, uiX, 8); uiY -= spacing;
+	}
 
 	// Mode Display
 	ss.str(""); ss << "Mode: " << (m_autoTurn ? "AUTO" : "MANUAL");

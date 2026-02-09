@@ -27,6 +27,14 @@ public:
 		TERRAIN_WATER,
 		NUM_TERRAIN
 	};
+	enum RANDOM_EVENT_TYPE
+	{
+		EVENT_NONE,
+		EVENT_HEAVY_RAIN,    
+		EVENT_PLAGUE,        
+		EVENT_EARTHQUAKE,    
+		EVENT_SUDDEN_DEATH,  
+	};
 	
 	SceneSandbox();
 	~SceneSandbox();
@@ -134,4 +142,11 @@ protected:
 	bool m_renderFog;
 	int m_currentTeamFog;
 	void UpdateFogOfWar(int teamID);
+
+	RANDOM_EVENT_TYPE m_currentEvent;
+	int m_eventDuration;
+	void ProcessRandomEvents();
+	void TriggerSuddenDeathStrike();
+	void TriggerEarthquake();
+	void TriggerPlague();
 };
