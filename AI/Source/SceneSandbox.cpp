@@ -1407,14 +1407,14 @@ void SceneSandbox::Render()
 
 	uiY -= spacing;
 	ss.str(""); ss << "[T] Toggle Mode";
-	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX, uiY); uiY -= spacing;
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX+12.f, uiY); uiY -= spacing;
 
 	// --- NEW: INSTRUCTION FOR FOG TOGGLE ---
 	ss.str(""); ss << "[M] Toggle Map View";
-	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX, uiY); uiY -= spacing;
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX + 12.f, uiY); uiY -= spacing;
 	// --------------------------
 	ss.str(""); ss << "[L] Switch Fog Team";
-	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX, uiY); uiY -= spacing;
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX + 12.f, uiY); uiY -= spacing;
 
 	uiY -= spacing;
 
