@@ -135,7 +135,7 @@ void SceneSandbox::SpawnUnit(MessageSpawnUnit::UNIT_TYPE unitType, Vector3 posit
 	float soldierHP = 20.f; float soldierSpeed = 3.f; float soldierAtk = 3.0f;
 
 	switch (unitType) {
-	case MessageSpawnUnit::UNIT_PHEROMONE: unit = FetchGO(GameObject::GO_PHEROMONE); unit->teamID = teamID; unit->moveSpeed = 0.f; break;
+		// REMOVED PHEROMONE CASE
 	case MessageSpawnUnit::UNIT_SPEEDY_ANT_WORKER:
 	case MessageSpawnUnit::UNIT_STRONG_ANT_WORKER:
 		unit = FetchGO(GameObject::GO_WORKER); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos;
@@ -150,111 +150,64 @@ void SceneSandbox::SpawnUnit(MessageSpawnUnit::UNIT_TYPE unitType, Vector3 posit
 	case MessageSpawnUnit::UNIT_SCOUT: unit = FetchGO(GameObject::GO_SCOUT); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 5.f; unit->health = 5.f; unit->moveSpeed = 8.f; unit->baseSpeed = 8.f; unit->detectionRange = m_gridSize * 6.f; unit->sm = new StateMachine(); unit->sm->AddState(new StateScoutPatrolling("Patrolling", unit)); unit->sm->AddState(new StateScoutReturnToColony("ReturnToColony", unit)); unit->sm->AddState(new StateScoutHiding("Hiding", unit)); unit->sm->SetNextState("Patrolling"); break;
 	case MessageSpawnUnit::UNIT_TANK: unit = FetchGO(GameObject::GO_TANK); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 40.f; unit->health = 40.f; unit->moveSpeed = 1.5f; unit->baseSpeed = 1.5f; unit->attackPower = 1.0f; unit->attackRange = m_gridSize * 0.5f; unit->sm = new StateMachine(); unit->sm->AddState(new StateTankGuarding("Guarding", unit)); unit->sm->AddState(new StateTankBlocking("Blocking", unit)); unit->sm->AddState(new StateTankRecovering("Recovering", unit)); unit->sm->SetNextState("Guarding"); break;
 	}
+
 	if (unit) {
-		int gx = (int)(position.x / m_gridSize); int gy = (int)(position.y / m_gridSize);
-		unit->pos.Set(gx * m_gridSize + m_gridOffset, gy * m_gridSize + m_gridOffset, 0);
-		unit->target = unit->pos; // Initial target is self
-		unit->countDown = 0.f; // Ready to act
-		if (unitType == MessageSpawnUnit::UNIT_PHEROMONE) unit->scale.Set(m_gridSize * 0.3f, m_gridSize * 0.3f, 1.f);
-		else { unit->scale.Set(m_gridSize, m_gridSize, 1.f); unit->targetFoodItem = nullptr; }
-	}
-}
+		int gx = (int)(position.x / m_gridSize);
+		int gy = (int)(position.y / m_gridSize);
 
-void SceneSandbox::SpawnTrail(GameObject* startObj, GameObject* endFood, int teamID) {
-	// (Same as original but ensure FindPath uses new system)
-	int gxStart = (int)(startObj->pos.x / m_gridSize); int gyStart = (int)(startObj->pos.y / m_gridSize);
-	int gxEnd = (int)(endFood->pos.x / m_gridSize); int gyEnd = (int)(endFood->pos.y / m_gridSize);
-	MazePt startPt(gxStart, gyStart); MazePt endPt(gxEnd, gyEnd);
-	MazePt targetPt = GetNearestVacantNeighbor(endPt, startPt);
-	std::vector<MazePt> path = FindPath(startPt, targetPt);
-	for (MazePt pt : path) {
-		bool exists = false;
-		for (auto go : m_goList) {
-			if (go->active && go->type == GameObject::GO_PHEROMONE) {
-				int pgx = (int)(go->pos.x / m_gridSize); int pgy = (int)(go->pos.y / m_gridSize);
-				if (pgx == pt.x && pgy == pt.y) { exists = true; break; }
+		// --- FIX: Ensure we never spawn on Water or Wall ---
+		if (!IsWithinBoundary(gx) || !IsWithinBoundary(gy) || !IsWalkable(m_terrainGrid[Get1DIndex(gx, gy)]))
+		{
+			// BFS to find nearest valid land tile
+			bool found = false;
+			std::queue<int> q;
+			std::vector<bool> visited(m_noGrid * m_noGrid, false);
+
+			if (IsWithinBoundary(gx) && IsWithinBoundary(gy)) {
+				int startIdx = Get1DIndex(gx, gy);
+				q.push(startIdx);
+				visited[startIdx] = true;
 			}
-		}
-		if (exists) continue;
-		Vector3 pos(pt.x * m_gridSize + m_gridOffset, pt.y * m_gridSize + m_gridOffset, 0);
-		GameObject* pheromone = FetchGO(GameObject::GO_PHEROMONE);
-		pheromone->active = true; pheromone->pos = pos; pheromone->target = pos; pheromone->teamID = teamID; pheromone->targetFoodItem = endFood;
-		pheromone->scale.Set(m_gridSize * 0.3f, m_gridSize * 0.3f, 1.f); pheromone->moveSpeed = 0.f;
-	}
-}
 
-std::vector<MazePt> SceneSandbox::FindPath(MazePt start, MazePt end)
-{
-	std::vector<MazePt> path;
-	if (start.x == end.x && start.y == end.y) return path;
-	if (!IsWalkable(m_terrainGrid[Get1DIndex(end.x, end.y)])) return path; // End is blocked
+			int dx[] = { 0, 0, -1, 1, -1, -1, 1, 1 }; // 8-way search for spawning
+			int dy[] = { 1, -1, 0, 0, -1, 1, -1, 1 };
 
-	// A* Data Structures
-	struct Node {
-		int index;
-		float fCost; // g + h
-		bool operator>(const Node& other) const { return fCost > other.fCost; }
-	};
+			while (!q.empty()) {
+				int curr = q.front(); q.pop();
+				int cx = curr % m_noGrid; int cy = curr / m_noGrid;
 
-	std::priority_queue<Node, std::vector<Node>, std::greater<Node>> openList;
-	std::vector<float> gScore(m_noGrid * m_noGrid, FLT_MAX);
-	std::vector<int> parent(m_noGrid * m_noGrid, -1);
+				if (IsWalkable(m_terrainGrid[curr])) {
+					gx = cx; gy = cy;
+					found = true;
+					break;
+				}
 
-	int startIdx = Get1DIndex(start.x, start.y);
-	int endIdx = Get1DIndex(end.x, end.y);
-
-	gScore[startIdx] = 0.f;
-	openList.push({ startIdx, 0.f }); // h=0 for start
-
-	int dx[] = { 0, 0, -1, 1 }; int dy[] = { 1, -1, 0, 0 };
-	bool found = false;
-
-	while (!openList.empty()) {
-		Node current = openList.top();
-		openList.pop();
-
-		int cx = current.index % m_noGrid;
-		int cy = current.index / m_noGrid;
-
-		if (current.index == endIdx) {
-			found = true;
-			break;
-		}
-
-		if (current.fCost > gScore[current.index] + (float)(abs(end.x - cx) + abs(end.y - cy))) continue; // Outdated node
-
-		for (int i = 0; i < 4; ++i) {
-			int nx = cx + dx[i]; int ny = cy + dy[i];
-			if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
-				int nIdx = Get1DIndex(nx, ny);
-				if (IsWalkable(m_terrainGrid[nIdx])) {
-					// Calculate Cost
-					float moveCost = GetTileCost(nx, ny);
-					float newG = gScore[current.index] + moveCost;
-
-					if (newG < gScore[nIdx]) {
-						gScore[nIdx] = newG;
-						parent[nIdx] = current.index;
-						// Heuristic: Manhattan
-						float h = (float)(abs(end.x - nx) + abs(end.y - ny));
-						openList.push({ nIdx, newG + h });
+				for (int i = 0; i < 8; ++i) {
+					int nx = cx + dx[i]; int ny = cy + dy[i];
+					if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
+						int nIdx = Get1DIndex(nx, ny);
+						if (!visited[nIdx]) {
+							visited[nIdx] = true;
+							q.push(nIdx);
+						}
 					}
 				}
 			}
 		}
-	}
 
-	if (found) {
-		int currIdx = endIdx;
-		while (currIdx != startIdx) {
-			path.push_back(MazePt(currIdx % m_noGrid, currIdx / m_noGrid));
-			currIdx = parent[currIdx];
-		}
-		std::reverse(path.begin(), path.end());
+		unit->pos.Set(gx * m_gridSize + m_gridOffset, gy * m_gridSize + m_gridOffset, 0);
+		unit->target = unit->pos;
+		unit->countDown = 0.f;
+		unit->scale.Set(m_gridSize, m_gridSize, 1.f);
+		unit->targetFoodItem = nullptr;
 	}
-
-	return path;
 }
+
+void SceneSandbox::SpawnTrail(GameObject* startObj, GameObject* endFood, int teamID)
+{
+	return;
+}
+
 
 bool SceneSandbox::IsGridOccupied(int gridX, int gridY) {
 	if (!IsWithinBoundary(gridX) || !IsWithinBoundary(gridY)) return true;
@@ -366,48 +319,98 @@ void SceneSandbox::Update(double dt)
 	}
 }
 
-void SceneSandbox::ProcessTurnLogic() { /* (Same content as original, just copy it) */
-	// Due to length limits, I trust you to keep the ProcessTurnLogic block identical to the original file
-	// BUT make sure to update where it calls GetTileCost which I already defined above.
-	// Below is the abridged structure:
-	for (size_t i = 0; i < m_goList.size(); ++i) {
+void SceneSandbox::ProcessTurnLogic()
+{
+	for (size_t i = 0; i < m_goList.size(); ++i)
+	{
 		GameObject* go = m_goList[i];
 		if (!go->active) continue;
-		if (go->countDown > 0.f) { go->countDown -= 1.0f; if (go->countDown > 0.01f) continue; go->countDown = 0.f; }
+
+		// 1. Cooldown
+		if (go->countDown > 0.f) {
+			go->countDown -= 1.0f;
+			if (go->countDown > 0.01f) continue;
+			go->countDown = 0.f;
+		}
+
+		// 2. Perception & State
 		DetectNearbyEntities(go);
+
 		if (go->type == GameObject::GO_WORKER && !go->isCarryingResource) FindNearestResource(go);
 		if (go->type == GameObject::GO_HEALER) FindNearestInjuredAlly(go);
 		if (go->type == GameObject::GO_SCOUT && go->targetFoodItem == nullptr) FindNearestResource(go);
+
 		if (go->sm) go->sm->Update(1.0f);
 
-		int gridX = static_cast<int>(go->pos.x / m_gridSize); int gridY = static_cast<int>(go->pos.y / m_gridSize);
+		// 3. Movement Logic
+		int gridX = static_cast<int>(go->pos.x / m_gridSize);
+		int gridY = static_cast<int>(go->pos.y / m_gridSize);
 		MazePt startPt(gridX, gridY);
 		MazePt targetPt(static_cast<int>(go->target.x / m_gridSize), static_cast<int>(go->target.y / m_gridSize));
 
+		// Adjust Target (Snap to neighbor if target is occupied food)
 		if (go->targetFoodItem != nullptr && go->targetFoodItem->active) {
-			// Snap logic...
 			bool shouldSnap = false;
 			if (go->type == GameObject::GO_WORKER && !go->isCarryingResource) shouldSnap = true;
 			if (go->type == GameObject::GO_SCOUT && (go->target - go->targetFoodItem->pos).LengthSquared() < (m_gridSize * 5) * (m_gridSize * 5)) shouldSnap = true;
-			if (shouldSnap) targetPt = GetNearestVacantNeighbor(MazePt((int)(go->targetFoodItem->pos.x / m_gridSize), (int)(go->targetFoodItem->pos.y / m_gridSize)), startPt);
-		}
-
-		if ((!go->path.empty() && (go->path.back().x != targetPt.x || go->path.back().y != targetPt.y)) || go->path.empty()) {
-			if (gridX != targetPt.x || gridY != targetPt.y) {
-				go->path = FindPath(startPt, targetPt);
-				if (!go->path.empty() && go->path[0].x == gridX && go->path[0].y == gridY) go->path.erase(go->path.begin());
+			if (shouldSnap) {
+				targetPt = GetNearestVacantNeighbor(MazePt((int)(go->targetFoodItem->pos.x / m_gridSize), (int)(go->targetFoodItem->pos.y / m_gridSize)), startPt);
 			}
 		}
 
-		if (!go->path.empty()) {
-			MazePt nextStep = go->path.front(); go->path.erase(go->path.begin());
-			go->target = Vector3(nextStep.x * m_gridSize + m_gridOffset, nextStep.y * m_gridSize + m_gridOffset, go->pos.z);
-			if (go->type == GameObject::GO_WORKER && !go->isCarryingResource) go->pathHistory.push_back(nextStep);
-			float cost = GetTileCost(nextStep.x, nextStep.y);
-			go->countDown = cost; // COST APPLIED HERE
-			Vector3 dir = go->target - go->pos; if (dir.LengthSquared() > 0.001f) go->viewDir = dir.Normalized();
+		// --- DECIDE PATHFINDING ALGORITHM ---
+		// Recompute path if target changed or path empty
+		if ((!go->path.empty() && (go->path.back().x != targetPt.x || go->path.back().y != targetPt.y)) || go->path.empty())
+		{
+			if (gridX != targetPt.x || gridY != targetPt.y) {
+
+				// CHECK CONDITION: Explore vs Chase/Attack
+				bool useDFS = false;
+
+				// Scouts always explore with DFS unless returning home (optional)
+				if (go->type == GameObject::GO_SCOUT) useDFS = true;
+
+				// Workers searching for food use DFS
+				if (go->type == GameObject::GO_WORKER && !go->isCarryingResource && go->targetFoodItem == nullptr) useDFS = true;
+
+				// Soldiers use A* (default is false)
+				if (go->type == GameObject::GO_SOLDIER || go->type == GameObject::GO_TANK) useDFS = false;
+
+				// EXECUTE ALGORITHM
+				if (useDFS) {
+					go->path = FindPathDFS(startPt, targetPt);
+				}
+				else {
+					go->path = FindPathAStar(startPt, targetPt);
+				}
+
+				// Trim start if it matches current pos
+				if (!go->path.empty() && go->path[0].x == gridX && go->path[0].y == gridY)
+					go->path.erase(go->path.begin());
+			}
 		}
-		else { go->target = go->pos; }
+
+		// 4. Move
+		if (!go->path.empty())
+		{
+			MazePt nextStep = go->path.front();
+			go->path.erase(go->path.begin());
+
+			go->target = Vector3(nextStep.x * m_gridSize + m_gridOffset, nextStep.y * m_gridSize + m_gridOffset, go->pos.z);
+
+			if (go->type == GameObject::GO_WORKER && !go->isCarryingResource)
+				go->pathHistory.push_back(nextStep);
+
+			float cost = GetTileCost(nextStep.x, nextStep.y);
+			go->countDown = cost;
+
+			Vector3 dir = go->target - go->pos;
+			if (dir.LengthSquared() > 0.001f) go->viewDir = dir.Normalized();
+		}
+		else
+		{
+			go->target = go->pos;
+		}
 	}
 }
 
@@ -488,23 +491,25 @@ void SceneSandbox::DetectNearbyEntities(GameObject* go)
 
 void SceneSandbox::FindNearestResource(GameObject* go)
 {
-	go->targetResource.SetZero(); go->targetFoodItem = nullptr; float nearestDistSq = FLT_MAX;
+	go->targetResource.SetZero();
+	go->targetFoodItem = nullptr;
+	float nearestDistSq = FLT_MAX;
+
+	// Only search for actual Food objects
 	for (auto goItem : m_goList) {
 		if (!goItem->active || goItem->type != GameObject::GO_FOOD) continue;
 		if (goItem->harvesterCount >= 5 || goItem->resourceCount <= 0) continue;
 		if (go->type == GameObject::GO_SCOUT && goItem->isMarked) continue;
+
 		float distSq = (go->pos - goItem->pos).LengthSquared();
-		if (distSq < nearestDistSq) { nearestDistSq = distSq; go->targetResource = goItem->pos; go->targetFoodItem = goItem; }
-	}
-	if (go->type == GameObject::GO_WORKER && go->targetFoodItem == nullptr) {
-		nearestDistSq = go->detectionRange * go->detectionRange;
-		for (auto trail : m_goList) {
-			if (!trail->active || trail->type != GameObject::GO_PHEROMONE || trail->teamID != go->teamID) continue;
-			if (trail->targetFoodItem == nullptr || !trail->targetFoodItem->active || trail->targetFoodItem->resourceCount <= 0) continue;
-			float distSq = (go->pos - trail->pos).LengthSquared();
-			if (distSq < nearestDistSq) { nearestDistSq = distSq; go->targetFoodItem = trail->targetFoodItem; go->targetResource = trail->targetFoodItem->pos; }
+		if (distSq < nearestDistSq) {
+			nearestDistSq = distSq;
+			go->targetResource = goItem->pos;
+			go->targetFoodItem = goItem;
 		}
 	}
+
+	// REMOVED: Pheromone trail search logic
 }
 
 void SceneSandbox::FindNearestInjuredAlly(GameObject* go)
@@ -521,6 +526,7 @@ void SceneSandbox::FindNearestInjuredAlly(GameObject* go)
 void SceneSandbox::GenerateMap()
 {
 	// 1. Initialize Randomly (Cellular Automata Base)
+	// Randomize walls
 	for (int i = 0; i < m_noGrid * m_noGrid; ++i) {
 		int roll = Math::RandIntMinMax(0, 100);
 		if (roll < 38) m_terrainGrid[i] = TERRAIN_WALL; // 38% Walls
@@ -571,24 +577,42 @@ void SceneSandbox::GenerateMap()
 	FillDeadZones();
 
 	// 7. Add Special Terrains (Mud, Water, Forest)
-	// We use Perlin-ish noise or simple patch growing. Symmetrical application.
+	// Generate a random offset so the "biomes" shift every game
+	float seedX = Math::RandFloatMinMax(0.f, 100.f);
+	float seedY = Math::RandFloatMinMax(0.f, 100.f);
+
 	for (int y = 0; y < m_noGrid; ++y) {
 		for (int x = 0; x < m_noGrid; ++x) {
 			int idx = Get1DIndex(x, y);
 			if (m_terrainGrid[idx] == TERRAIN_FLOOR) {
-				// Simple noise simulation using coordinate hashing
-				float noise = (float)(sin(x * 0.3f) + cos(y * 0.3f) + sin(x * 0.1f + y * 0.1f) * 2.0f);
-				if (noise > 2.0f) m_terrainGrid[idx] = TERRAIN_FOREST;
-				else if (noise < -1.8f) m_terrainGrid[idx] = TERRAIN_MUD;
-				else if (noise < -2.5f) m_terrainGrid[idx] = TERRAIN_WATER; // Very rare pools
+				// Simple noise simulation with random seed
+				float nx = (x * 0.2f) + seedX;
+				float ny = (y * 0.2f) + seedY;
+
+				// Combine a few sine waves for "blobby" shapes
+				float noise = sin(nx) + cos(ny) + sin(nx * 0.5f + ny * 0.5f) * 1.5f;
+
+				// FIX: Check extreme values (Water) FIRST, then Mud, then Forest
+				// Range of noise is roughly [-3.5, 3.5]
+
+				if (noise < -1.8f) {
+					m_terrainGrid[idx] = TERRAIN_WATER; // Deep lows = Water
+				}
+				else if (noise < -0.5f) {
+					m_terrainGrid[idx] = TERRAIN_MUD;   // Shallow lows = Mud
+				}
+				else if (noise > 2.0f) {
+					m_terrainGrid[idx] = TERRAIN_FOREST; // High peaks = Forest
+				}
 			}
 		}
 	}
+
 	// Re-Enforce Symmetry and Clearance after terrain addition
 	EnforceSymmetry();
 	ClearArea(3, 3, 2);
 	ClearArea(m_noGrid - 4, m_noGrid - 4, 2);
-	EnsureConnectivity(); // Final check
+	EnsureConnectivity(); // Final check to ensure Water didn't block the path
 }
 
 void SceneSandbox::EnforceSymmetry()
@@ -612,7 +636,9 @@ void SceneSandbox::EnsureConnectivity()
 	MazePt start(3, 3);
 	MazePt end(m_noGrid - 4, m_noGrid - 4);
 
-	auto path = FindPath(start, end);
+	// Use A* to check connectivity during generation
+	auto path = FindPathAStar(start, end);
+
 	if (path.empty()) {
 		// Brute force path carving (Bresenham line) if disconnected
 		int x0 = start.x; int y0 = start.y;
@@ -669,7 +695,139 @@ void SceneSandbox::FillDeadZones()
 		}
 	}
 }
+std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end)
+{
+	std::vector<MazePt> path;
+	if (start.x == end.x && start.y == end.y) return path;
+	if (!IsWalkable(m_terrainGrid[Get1DIndex(end.x, end.y)])) return path;
 
+	struct Node {
+		int index;
+		float fCost;
+		bool operator>(const Node& other) const { return fCost > other.fCost; }
+	};
+
+	std::priority_queue<Node, std::vector<Node>, std::greater<Node>> openList;
+	std::vector<float> gScore(m_noGrid * m_noGrid, FLT_MAX);
+	std::vector<int> parent(m_noGrid * m_noGrid, -1);
+
+	int startIdx = Get1DIndex(start.x, start.y);
+	int endIdx = Get1DIndex(end.x, end.y);
+
+	gScore[startIdx] = 0.f;
+	openList.push({ startIdx, 0.f });
+
+	int dx[] = { 0, 0, -1, 1 }; int dy[] = { 1, -1, 0, 0 };
+	bool found = false;
+
+	while (!openList.empty()) {
+		Node current = openList.top();
+		openList.pop();
+
+		if (current.index == endIdx) {
+			found = true;
+			break;
+		}
+
+		// Optimization: If we found a shorter way to this node already, skip
+		if (current.fCost > gScore[current.index] + (float)((abs(end.x - (current.index % m_noGrid)) + abs(end.y - (current.index / m_noGrid))))) continue;
+
+		int cx = current.index % m_noGrid;
+		int cy = current.index / m_noGrid;
+
+		for (int i = 0; i < 4; ++i) {
+			int nx = cx + dx[i]; int ny = cy + dy[i];
+			if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
+				int nIdx = Get1DIndex(nx, ny);
+				if (IsWalkable(m_terrainGrid[nIdx])) {
+					float moveCost = GetTileCost(nx, ny);
+					float newG = gScore[current.index] + moveCost;
+
+					if (newG < gScore[nIdx]) {
+						gScore[nIdx] = newG;
+						parent[nIdx] = current.index;
+						float h = (float)(abs(end.x - nx) + abs(end.y - ny)); // Manhattan Heuristic
+						openList.push({ nIdx, newG + h });
+					}
+				}
+			}
+		}
+	}
+
+	if (found) {
+		int currIdx = endIdx;
+		while (currIdx != startIdx) {
+			path.push_back(MazePt(currIdx % m_noGrid, currIdx / m_noGrid));
+			currIdx = parent[currIdx];
+		}
+		std::reverse(path.begin(), path.end());
+	}
+	return path;
+}
+
+// --- DFS ALGORITHM (Exploratory, Unweighted, "Wandering") ---
+std::vector<MazePt> SceneSandbox::FindPathDFS(MazePt start, MazePt end)
+{
+	std::vector<MazePt> path;
+	if (start.x == end.x && start.y == end.y) return path;
+	if (!IsWalkable(m_terrainGrid[Get1DIndex(end.x, end.y)])) return path;
+
+	std::stack<int> s;
+	std::vector<bool> visited(m_noGrid * m_noGrid, false);
+	std::vector<int> parent(m_noGrid * m_noGrid, -1);
+
+	int startIdx = Get1DIndex(start.x, start.y);
+	int endIdx = Get1DIndex(end.x, end.y);
+
+	s.push(startIdx);
+	visited[startIdx] = true;
+
+	bool found = false;
+	// Shuffle directions for random-looking exploration
+	int dirs[4] = { 0, 1, 2, 3 };
+	// std::random_shuffle is deprecated in C++17, but simple manual shuffle or fixed is fine. 
+	// Fixed order in DFS creates "snaking" patterns.
+	int dx[] = { 0, 0, -1, 1 };
+	int dy[] = { 1, -1, 0, 0 };
+
+	while (!s.empty()) {
+		int currIdx = s.top();
+		s.pop();
+
+		if (currIdx == endIdx) {
+			found = true;
+			break;
+		}
+
+		int cx = currIdx % m_noGrid;
+		int cy = currIdx / m_noGrid;
+
+		// Check neighbors
+		for (int i = 0; i < 4; ++i) {
+			int nx = cx + dx[i];
+			int ny = cy + dy[i];
+
+			if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
+				int nIdx = Get1DIndex(nx, ny);
+				if (!visited[nIdx] && IsWalkable(m_terrainGrid[nIdx])) {
+					visited[nIdx] = true;
+					parent[nIdx] = currIdx;
+					s.push(nIdx);
+				}
+			}
+		}
+	}
+
+	if (found) {
+		int currIdx = endIdx;
+		while (currIdx != startIdx) {
+			path.push_back(MazePt(currIdx % m_noGrid, currIdx / m_noGrid));
+			currIdx = parent[currIdx];
+		}
+		std::reverse(path.begin(), path.end());
+	}
+	return path;
+}
 bool SceneSandbox::IsWalkable(TERRAIN_TYPE type) const {
 	return type != TERRAIN_WALL && type != TERRAIN_WATER;
 }
@@ -706,123 +864,35 @@ int SceneSandbox::Get1DIndex(int x, int y) const { return y * m_noGrid + x; }
 
 bool SceneSandbox::Handle(Message* message) {
 	MessageSpawnUnit* msgSpawn = dynamic_cast<MessageSpawnUnit*>(message);
-	if (msgSpawn)
-	{
-		if (msgSpawn->type == MessageSpawnUnit::UNIT_PHEROMONE)
-		{
-			bool exists = false;
-			int gx = (int)(msgSpawn->position.x / m_gridSize); int gy = (int)(msgSpawn->position.y / m_gridSize);
-			for (auto go : m_goList)
-			{
-				if (go->active && go->type == GameObject::GO_PHEROMONE)
-			{
-					int pgx = (int)(go->pos.x / m_gridSize); int pgy = (int)(go->pos.y / m_gridSize);
-					if (gx == pgx && gy == pgy)
-					{
-						exists = true; break;
-					}
-				}
-			}
-			if (!exists)
-			{
-				SpawnUnit(msgSpawn->type, msgSpawn->position, msgSpawn->spawner->teamID);
-				for (int i = m_goList.size() - 1; i >= 0; --i)
-				{
-					GameObject* go = m_goList[i]; if (go->active && go->type == GameObject::GO_PHEROMONE && (go->pos - msgSpawn->position).LengthSquared() < 1.0f)
-					{
-						go->targetFoodItem = msgSpawn->spawner->targetFoodItem; break;
-					}
-				}
-			}
+	if (msgSpawn) {
+		// IGNORE PHEROMONE MESSAGES
+		if (msgSpawn->type == MessageSpawnUnit::UNIT_PHEROMONE) {
 			return true;
 		}
 
-		// --- COST & LIMITS ---
-		int cost = 0;
-		int currentCount = 0;
-		int limit = 100; // Default no limit
-
+		int cost = 0; int currentCount = 0; int limit = 100;
 		switch (msgSpawn->type) {
-		case MessageSpawnUnit::UNIT_SPEEDY_ANT_WORKER:
-		case MessageSpawnUnit::UNIT_STRONG_ANT_WORKER:
-			cost = 3;
-			limit = 10;
-			currentCount = (msgSpawn->spawner->teamID == 0) ? m_redWorkerCount : m_blueWorkerCount;
-			break;
-		case MessageSpawnUnit::UNIT_SCOUT:
-			cost = 4;
-			limit = 2;
-			currentCount = (msgSpawn->spawner->teamID == 0) ? m_redScoutCount : m_blueScoutCount;
-			break;
-		case MessageSpawnUnit::UNIT_SPEEDY_ANT_SOLDIER:
-		case MessageSpawnUnit::UNIT_STRONG_ANT_SOLDIER:
-			cost = 5;
-			limit = 15;
-			currentCount = (msgSpawn->spawner->teamID == 0) ? m_redSoldierCount : m_blueSoldierCount;
-			break;
-		case MessageSpawnUnit::UNIT_HEALER:
-			cost = 8;
-			limit = 5;
-			currentCount = (msgSpawn->spawner->teamID == 0) ? m_redHealerCount : m_blueHealerCount;
-			break;
-		case MessageSpawnUnit::UNIT_TANK:
-			cost = 10;
-			limit = 5;
-			currentCount = (msgSpawn->spawner->teamID == 0) ? m_redTankCount : m_blueTankCount;
-			break;
+		case MessageSpawnUnit::UNIT_SPEEDY_ANT_WORKER: case MessageSpawnUnit::UNIT_STRONG_ANT_WORKER: cost = 3; limit = 10; currentCount = (msgSpawn->spawner->teamID == 0) ? m_redWorkerCount : m_blueWorkerCount; break;
+		case MessageSpawnUnit::UNIT_SCOUT: cost = 4; limit = 2; currentCount = (msgSpawn->spawner->teamID == 0) ? m_redScoutCount : m_blueScoutCount; break;
+		case MessageSpawnUnit::UNIT_SPEEDY_ANT_SOLDIER: case MessageSpawnUnit::UNIT_STRONG_ANT_SOLDIER: cost = 5; limit = 15; currentCount = (msgSpawn->spawner->teamID == 0) ? m_redSoldierCount : m_blueSoldierCount; break;
+		case MessageSpawnUnit::UNIT_HEALER: cost = 8; limit = 5; currentCount = (msgSpawn->spawner->teamID == 0) ? m_redHealerCount : m_blueHealerCount; break;
+		case MessageSpawnUnit::UNIT_TANK: cost = 10; limit = 5; currentCount = (msgSpawn->spawner->teamID == 0) ? m_redTankCount : m_blueTankCount; break;
 		}
 
 		if (currentCount >= limit) return true;
 
-		if (msgSpawn->spawner->teamID == 0)
-		{
-			if (m_redResources >= cost)
-			{
-				m_redResources -= cost; SpawnUnit(msgSpawn->type, msgSpawn->position, 0);
-			}
+		if (msgSpawn->spawner->teamID == 0) {
+			if (m_redResources >= cost) { m_redResources -= cost; SpawnUnit(msgSpawn->type, msgSpawn->position, 0); }
 		}
-		else
-		{
-			if (m_blueResources >= cost)
-		{
-				m_blueResources -= cost; SpawnUnit(msgSpawn->type, msgSpawn->position, 1);
-			}
+		else {
+			if (m_blueResources >= cost) { m_blueResources -= cost; SpawnUnit(msgSpawn->type, msgSpawn->position, 1); }
 		}
 		return true;
 	}
+	// ... (Keep existing handlers for ResourceDelivered, EnemySpotted, RequestHelp)
 	MessageResourceDelivered* msgRes = dynamic_cast<MessageResourceDelivered*>(message); if (msgRes) { if (msgRes->teamID == 0) m_redResources += msgRes->resourceAmount; else m_blueResources += msgRes->resourceAmount; return true; }
-
-	MessageEnemySpotted* msgEnemy = dynamic_cast<MessageEnemySpotted*>(message);
-	if (msgEnemy) {
-		m_coloniesDetected = true;
-		for (size_t i = 0; i < m_goList.size(); ++i)
-		{
-			GameObject* go = m_goList[i];
-			if (!go->active || go->teamID != msgEnemy->teamID)
-				continue;
-			if ((go->type == GameObject::GO_SOLDIER || go->type == GameObject::GO_STRONG_ANT_SOLDIER) && (go->pos - msgEnemy->enemy->pos).LengthSquared() < m_gridSize * m_gridSize * 16.f)
-			{
-				go->targetEnemy = msgEnemy->enemy;
-			}
-		}
-		return true;
-	}
-	MessageRequestHelp* msgHelp = dynamic_cast<MessageRequestHelp*>(message);
-	if (msgHelp)
-	{
-		for (size_t i = 0; i < m_goList.size(); ++i)
-		{
-			GameObject* go = m_goList[i];
-			if (!go->active || go->teamID != msgHelp->teamID)
-				continue;
-			if ((go->type == GameObject::GO_SOLDIER || go->type == GameObject::GO_STRONG_ANT_SOLDIER) && (go->pos - msgHelp->position).LengthSquared() < m_gridSize * m_gridSize * 16.f)
-			{
-				go->target = msgHelp->position;
-			}
-		}
-		return true;
-	}
-
+	MessageEnemySpotted* msgEnemy = dynamic_cast<MessageEnemySpotted*>(message); if (msgEnemy) { m_coloniesDetected = true; for (size_t i = 0; i < m_goList.size(); ++i) { GameObject* go = m_goList[i]; if (!go->active || go->teamID != msgEnemy->teamID) continue; if ((go->type == GameObject::GO_SOLDIER || go->type == GameObject::GO_STRONG_ANT_SOLDIER) && (go->pos - msgEnemy->enemy->pos).LengthSquared() < m_gridSize * m_gridSize * 16.f) { go->targetEnemy = msgEnemy->enemy; } } return true; }
+	MessageRequestHelp* msgHelp = dynamic_cast<MessageRequestHelp*>(message); if (msgHelp) { for (size_t i = 0; i < m_goList.size(); ++i) { GameObject* go = m_goList[i]; if (!go->active || go->teamID != msgHelp->teamID) continue; if ((go->type == GameObject::GO_SOLDIER || go->type == GameObject::GO_STRONG_ANT_SOLDIER) && (go->pos - msgHelp->position).LengthSquared() < m_gridSize * m_gridSize * 16.f) { go->target = msgHelp->position; } } return true; }
 	return true;
 }
 
@@ -831,17 +901,6 @@ void SceneSandbox::RenderGO(GameObject* go)
 	// 1. Move to Object Position
 	modelStack.PushMatrix();
 	modelStack.Translate(go->pos.x, go->pos.y, 0.1f);
-
-	// Render PHEROMONE
-	if (go->type == GameObject::GO_PHEROMONE) {
-		modelStack.Scale(go->scale.x, go->scale.y, 1.f);
-		if (go->teamID == 0)
-			RenderMesh(meshList[GEO_TERRITORYRED], false);
-		else
-			RenderMesh(meshList[GEO_TERRITORYBLUE], false);
-		modelStack.PopMatrix();
-		return;
-	}
 
 	// 2. Render THE UNIT (with Rotation)
 	modelStack.PushMatrix();

@@ -40,7 +40,8 @@ public:
 
 	GameObject* FetchGO(GameObject::GAMEOBJECT_TYPE type);
 	void SpawnUnit(MessageSpawnUnit::UNIT_TYPE unitType, Vector3 position, int teamID);
-	std::vector<MazePt> FindPath(MazePt start, MazePt end);
+	std::vector<MazePt> FindPathAStar(MazePt start, MazePt end); // For Chase/Attack
+	std::vector<MazePt> FindPathDFS(MazePt start, MazePt end);   // For Exploration
 
 protected:
 	// Turn-Based Systems

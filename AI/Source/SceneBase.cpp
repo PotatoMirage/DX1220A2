@@ -150,7 +150,7 @@ void SceneBase::Init()
 	//week 7
 	meshList[GEO_WHITEQUAD] = MeshBuilder::GenerateQuad("whitequad", Color(1, 1, 1));
 	meshList[GEO_WALL] = MeshBuilder::GenerateQuad("wall", Color(1, 1, 1));
-	meshList[GEO_WALL]->textureID = LoadTGA("Image//dirtwall.tga");
+	meshList[GEO_WALL]->textureID = LoadTGA("Image//wall.tga");
 	meshList[GEO_FLOOR] = MeshBuilder::GenerateQuad("floor", Color(1, 1, 1));
 	meshList[GEO_FLOOR]->textureID = LoadTGA("Image//floor.tga");
 	meshList[GEO_AGENT] = MeshBuilder::GenerateQuad("agent", Color(1, 1, 1));
@@ -202,11 +202,11 @@ void SceneBase::Init()
 	LOAD_TEXTURE_MESH(GEO_SCOUT_BLUE, "Image//Ant_Scout_Blue.tga");
 	LOAD_TEXTURE_MESH(GEO_TANK_BLUE, "Image//Ant_Tank_Blue.tga");
 	meshList[GEO_MUD] = MeshBuilder::GenerateQuad("Mud", Color(0.5f, 0.35f, 0.2f), 1.f);
-	meshList[GEO_MUD]->textureID = LoadTGA("Image//floor.tga");
+	meshList[GEO_MUD]->textureID = LoadTGA("Image//dirtwall.tga");
 	meshList[GEO_WATER] = MeshBuilder::GenerateQuad("Water", Color(0.2f, 0.5f, 0.9f), 1.f);
 	meshList[GEO_WATER]->textureID = LoadTGA("Image//floor.tga");
-	meshList[GEO_FOREST] = MeshBuilder::GenerateQuad("Forest", Color(0.1f, 0.5f, 0.1f), 1.f);
-	meshList[GEO_FOREST]->textureID = LoadTGA("Image//floor.tga");
+	meshList[GEO_FOREST] = MeshBuilder::GenerateQuad("Forest", Color(1.f, 1.f, 1.f), 1.f);
+	meshList[GEO_FOREST]->textureID = LoadTGA("Image//Forest.tga");
 
 	bLightEnabled = false;
 }
