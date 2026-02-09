@@ -5,9 +5,17 @@
 #include "SceneBase.h"
 #include "ObjectBase.h"
 #include "ConcreteMessages.h"
+
 class SceneSandbox : public SceneBase, public ObjectBase
 {
 public:
+	enum TURN_PHASE
+	{
+		PHASE_LOGIC,
+		PHASE_ANIMATION,
+		PHASE_WAITING // Optional buffer
+	};
+
 	SceneSandbox();
 	~SceneSandbox();
 
@@ -22,7 +30,17 @@ public:
 	GameObject* FetchGO(GameObject::GAMEOBJECT_TYPE type);
 	void SpawnUnit(MessageSpawnUnit::UNIT_TYPE unitType, Vector3 position, int teamID);
 	std::vector<MazePt> FindPath(MazePt start, MazePt end);
+
 protected:
+	// Turn-Based Systems
+	TURN_PHASE m_currPhase;
+	int m_turnNumber;
+	float m_animationSpeed; // Speed of visual sliding
+
+	void ProcessTurnLogic();
+	bool ProcessTurnAnimation(double dt);
+	float GetTileCost(int x, int y) const; // Determine move cost
+
 	// Helper functions
 	int IsWithinBoundary(int x) const;
 	int Get1DIndex(int x, int y) const;
@@ -83,4 +101,3 @@ protected:
 	std::vector<bool> m_bfsVisited;
 	std::vector<int> m_bfsParent;
 };
-
