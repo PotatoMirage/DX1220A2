@@ -16,7 +16,8 @@ SceneSandbox::SceneSandbox()
 	m_redWorkerCount{}, m_redResources{}, m_blueWorkerCount{}, m_blueResources{},
 	m_redQueen{}, m_blueQueen{}, m_simulationTime{}, m_simulationEnded{}, m_winner{}, m_updateTimer{}, m_updateCycle{},
 	m_terrainGrid{}, m_foodGrid{}, m_coloniesDetected(false),
-	m_currPhase(PHASE_LOGIC), m_turnNumber(0), m_animationSpeed(5.0f), m_autoTurn(false), m_turnTimer(0.f), m_turnInterval(0.05f)
+	m_currPhase(PHASE_LOGIC), m_turnNumber(0), m_animationSpeed(5.0f), m_autoTurn(false), m_turnTimer(0.f), m_turnInterval(0.05f),
+	m_renderFog(true), m_currentTeamFog(0)
 {
 }
 
@@ -37,7 +38,6 @@ void SceneSandbox::Init()
 
 	Math::InitRNG();
 
-	// Grid setup - 30x30
 	m_noGrid = 30;
 	m_gridSize = m_worldHeight / m_noGrid;
 	m_gridOffset = m_gridSize / 2;
@@ -45,7 +45,9 @@ void SceneSandbox::Init()
 	m_terrainGrid.assign(m_noGrid * m_noGrid, TERRAIN_FLOOR);
 	m_foodGrid.assign(m_noGrid * m_noGrid, false);
 
-	// --- NEW: PROCEDURAL MAP GENERATION ---
+	m_fogGrid.assign(m_noGrid * m_noGrid, true);
+	m_renderFog = true;
+	m_currentTeamFog = 0;
 	GenerateMap();
 
 	SceneData::GetInstance()->SetObjectCount(0);
@@ -64,19 +66,18 @@ void SceneSandbox::Init()
 	m_currPhase = PHASE_LOGIC;
 	m_turnNumber = 1;
 
-	// Spawn Queens (Positions guaranteed safe by GenerateMap)
-	// Red at Top-Leftish (3,3), Blue at Bottom-Rightish (Max-4)
 	m_redQueen = FetchGO(GameObject::GO_QUEEN); m_redQueen->teamID = 0;
 	m_redQueen->pos.Set(m_gridSize * 3.f + m_gridOffset, m_gridSize * 3.f + m_gridOffset, 0);
 	m_redQueen->homeBase = m_redQueen->pos; m_redQueen->scale.Set(m_gridSize * 1.5f, m_gridSize * 1.5f, 1.f); m_redQueen->maxHealth = 50.f; m_redQueen->health = 50.f; m_redQueen->moveSpeed = 0.f; m_redQueen->detectionRange = m_gridSize * 8.f; m_redQueen->sm = new StateMachine(); m_redQueen->sm->AddState(new StateQueenSpawning("Spawning", m_redQueen)); m_redQueen->sm->AddState(new StateQueenEmergency("Emergency", m_redQueen)); m_redQueen->sm->AddState(new StateQueenCooldown("Cooldown", m_redQueen)); m_redQueen->sm->SetNextState("Spawning");
 	m_redQueen->target = m_redQueen->pos; m_redQueen->countDown = 0.f;
+	m_redQueen->visibilityType = GameObject::VISIBILITY_2_TILE_OMNI;
 
 	m_blueQueen = FetchGO(GameObject::GO_QUEEN); m_blueQueen->teamID = 1;
 	m_blueQueen->pos.Set(m_gridSize * (m_noGrid - 4.f) + m_gridOffset, m_gridSize * (m_noGrid - 4.f) + m_gridOffset, 0);
 	m_blueQueen->homeBase = m_blueQueen->pos; m_blueQueen->scale.Set(m_gridSize * 1.5f, m_gridSize * 1.5f, 1.f); m_blueQueen->maxHealth = 50.f; m_blueQueen->health = 50.f; m_blueQueen->moveSpeed = 0.f; m_blueQueen->detectionRange = m_gridSize * 8.f; m_blueQueen->sm = new StateMachine(); m_blueQueen->sm->AddState(new StateQueenSpawning("Spawning", m_blueQueen)); m_blueQueen->sm->AddState(new StateQueenEmergency("Emergency", m_blueQueen)); m_blueQueen->sm->AddState(new StateQueenCooldown("Cooldown", m_blueQueen)); m_blueQueen->sm->SetNextState("Spawning");
 	m_blueQueen->target = m_blueQueen->pos; m_blueQueen->countDown = 0.f;
+	m_blueQueen->visibilityType = GameObject::VISIBILITY_2_TILE_OMNI;
 
-	// Initial Spawns
 	for (int i = 0; i < 3; ++i) { SpawnUnit(MessageSpawnUnit::UNIT_SPEEDY_ANT_WORKER, m_redQueen->pos, 0); SpawnUnit(MessageSpawnUnit::UNIT_STRONG_ANT_WORKER, m_blueQueen->pos, 1); }
 	for (int i = 0; i < 2; ++i) {
 		SpawnUnit(MessageSpawnUnit::UNIT_SPEEDY_ANT_SOLDIER, m_redQueen->pos + Vector3(Math::RandFloatMinMax(-3, 3) * m_gridSize, Math::RandFloatMinMax(-3, 3) * m_gridSize, 0), 0);
@@ -85,7 +86,6 @@ void SceneSandbox::Init()
 	SpawnUnit(MessageSpawnUnit::UNIT_SCOUT, m_redQueen->pos + Vector3(0, 2, 0), 0);
 	SpawnUnit(MessageSpawnUnit::UNIT_SCOUT, m_blueQueen->pos + Vector3(0, -2, 0), 1);
 
-	// Spawn Food
 	m_foodLocations.clear();
 	std::vector<GameObject*> allFood;
 	int foodCount = Math::RandIntMinMax(15, 25);
@@ -103,7 +103,7 @@ void SceneSandbox::Init()
 			if (!IsWithinBoundary(gridX) || !IsWithinBoundary(gridY)) continue;
 			if (m_terrainGrid[Get1DIndex(gridX, gridY)] == TERRAIN_WALL || m_terrainGrid[Get1DIndex(gridX, gridY)] == TERRAIN_WATER) continue;
 			if (m_foodGrid[Get1DIndex(gridX, gridY)]) continue;
-			if (gridX <= 5 && gridY <= 5) continue; // Further from base
+			if (gridX <= 5 && gridY <= 5) continue;
 			if (gridX >= m_noGrid - 6 && gridY >= m_noGrid - 6) continue;
 			validPos = true;
 		}
@@ -135,30 +135,38 @@ void SceneSandbox::SpawnUnit(MessageSpawnUnit::UNIT_TYPE unitType, Vector3 posit
 	float soldierHP = 20.f; float soldierSpeed = 3.f; float soldierAtk = 3.0f;
 
 	switch (unitType) {
-		// REMOVED PHEROMONE CASE
 	case MessageSpawnUnit::UNIT_SPEEDY_ANT_WORKER:
 	case MessageSpawnUnit::UNIT_STRONG_ANT_WORKER:
 		unit = FetchGO(GameObject::GO_WORKER); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos;
 		unit->maxHealth = workerHP; unit->health = workerHP; unit->attackPower = workerAtk; unit->moveSpeed = workerSpeed; unit->baseSpeed = workerSpeed; unit->detectionRange = m_gridSize * 6.f; unit->attackRange = m_gridSize * 0.8f;
+		unit->visibilityType = GameObject::VISIBILITY_1_TILE;
 		unit->sm = new StateMachine(); unit->sm->AddState(new StateWorkerIdle("Idle", unit)); unit->sm->AddState(new StateWorkerSearching("Searching", unit)); unit->sm->AddState(new StateWorkerGathering("Gathering", unit)); unit->sm->AddState(new StateWorkerFleeing("Fleeing", unit)); unit->sm->SetNextState("Idle"); break;
 	case MessageSpawnUnit::UNIT_SPEEDY_ANT_SOLDIER:
 	case MessageSpawnUnit::UNIT_STRONG_ANT_SOLDIER:
 		unit = FetchGO(GameObject::GO_SOLDIER); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos;
 		unit->maxHealth = soldierHP; unit->health = soldierHP; unit->attackPower = soldierAtk; unit->moveSpeed = soldierSpeed; unit->baseSpeed = soldierSpeed; unit->detectionRange = m_gridSize * 8.f; unit->attackRange = m_gridSize * 1.3f;
+		unit->visibilityType = GameObject::VISIBILITY_2_TILE_OMNI;
 		unit->sm = new StateMachine(); unit->sm->AddState(new StateSoldierPatrolling("Patrolling", unit)); unit->sm->AddState(new StateSoldierAttacking("Attacking", unit)); unit->sm->AddState(new StateSoldierResting("Resting", unit)); unit->sm->AddState(new StateSoldierRetreating("Retreating", unit)); unit->sm->SetNextState("Patrolling"); break;
-	case MessageSpawnUnit::UNIT_HEALER: unit = FetchGO(GameObject::GO_HEALER); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 8.f; unit->health = 8.f; unit->moveSpeed = 4.f; unit->baseSpeed = 4.f; unit->sm = new StateMachine(); unit->sm->AddState(new StateHealerIdle("Idle", unit)); unit->sm->AddState(new StateHealerTraveling("Traveling", unit)); unit->sm->AddState(new StateHealerHealing("Healing", unit)); unit->sm->SetNextState("Idle"); break;
-	case MessageSpawnUnit::UNIT_SCOUT: unit = FetchGO(GameObject::GO_SCOUT); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 5.f; unit->health = 5.f; unit->moveSpeed = 8.f; unit->baseSpeed = 8.f; unit->detectionRange = m_gridSize * 6.f; unit->sm = new StateMachine(); unit->sm->AddState(new StateScoutPatrolling("Patrolling", unit)); unit->sm->AddState(new StateScoutReturnToColony("ReturnToColony", unit)); unit->sm->AddState(new StateScoutHiding("Hiding", unit)); unit->sm->SetNextState("Patrolling"); break;
-	case MessageSpawnUnit::UNIT_TANK: unit = FetchGO(GameObject::GO_TANK); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 40.f; unit->health = 40.f; unit->moveSpeed = 1.5f; unit->baseSpeed = 1.5f; unit->attackPower = 1.0f; unit->attackRange = m_gridSize * 0.5f; unit->sm = new StateMachine(); unit->sm->AddState(new StateTankGuarding("Guarding", unit)); unit->sm->AddState(new StateTankBlocking("Blocking", unit)); unit->sm->AddState(new StateTankRecovering("Recovering", unit)); unit->sm->SetNextState("Guarding"); break;
+	case MessageSpawnUnit::UNIT_HEALER:
+		unit = FetchGO(GameObject::GO_HEALER); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 8.f; unit->health = 8.f; unit->moveSpeed = 4.f; unit->baseSpeed = 4.f;
+		unit->visibilityType = GameObject::VISIBILITY_2_TILE_OMNI;
+		unit->sm = new StateMachine(); unit->sm->AddState(new StateHealerIdle("Idle", unit)); unit->sm->AddState(new StateHealerTraveling("Traveling", unit)); unit->sm->AddState(new StateHealerHealing("Healing", unit)); unit->sm->SetNextState("Idle"); break;
+	case MessageSpawnUnit::UNIT_SCOUT:
+		unit = FetchGO(GameObject::GO_SCOUT); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 5.f; unit->health = 5.f; unit->moveSpeed = 8.f; unit->baseSpeed = 8.f; unit->detectionRange = m_gridSize * 6.f;
+		unit->visibilityType = GameObject::VISIBILITY_3_TILE_LINEAR;
+		unit->sm = new StateMachine(); unit->sm->AddState(new StateScoutPatrolling("Patrolling", unit)); unit->sm->AddState(new StateScoutReturnToColony("ReturnToColony", unit)); unit->sm->AddState(new StateScoutHiding("Hiding", unit)); unit->sm->SetNextState("Patrolling"); break;
+	case MessageSpawnUnit::UNIT_TANK:
+		unit = FetchGO(GameObject::GO_TANK); unit->teamID = teamID; unit->homeBase = (teamID == 0) ? m_redQueen->pos : m_blueQueen->pos; unit->maxHealth = 40.f; unit->health = 40.f; unit->moveSpeed = 1.5f; unit->baseSpeed = 1.5f; unit->attackPower = 1.0f; unit->attackRange = m_gridSize * 0.5f;
+		unit->visibilityType = GameObject::VISIBILITY_2_TILE_OMNI;
+		unit->sm = new StateMachine(); unit->sm->AddState(new StateTankGuarding("Guarding", unit)); unit->sm->AddState(new StateTankBlocking("Blocking", unit)); unit->sm->AddState(new StateTankRecovering("Recovering", unit)); unit->sm->SetNextState("Guarding"); break;
 	}
 
 	if (unit) {
 		int gx = (int)(position.x / m_gridSize);
 		int gy = (int)(position.y / m_gridSize);
 
-		// --- FIX: Ensure we never spawn on Water or Wall ---
 		if (!IsWithinBoundary(gx) || !IsWithinBoundary(gy) || !IsWalkable(m_terrainGrid[Get1DIndex(gx, gy)]))
 		{
-			// BFS to find nearest valid land tile
 			bool found = false;
 			std::queue<int> q;
 			std::vector<bool> visited(m_noGrid * m_noGrid, false);
@@ -169,7 +177,7 @@ void SceneSandbox::SpawnUnit(MessageSpawnUnit::UNIT_TYPE unitType, Vector3 posit
 				visited[startIdx] = true;
 			}
 
-			int dx[] = { 0, 0, -1, 1, -1, -1, 1, 1 }; // 8-way search for spawning
+			int dx[] = { 0, 0, -1, 1, -1, -1, 1, 1 };
 			int dy[] = { 1, -1, 0, 0, -1, 1, -1, 1 };
 
 			while (!q.empty()) {
@@ -237,6 +245,24 @@ void SceneSandbox::Update(double dt)
 
 	if (Application::IsKeyPressed(VK_END)) m_simulationEnded = true;
 
+	static bool bMKeyState = false;
+	if (Application::IsKeyPressed('M') && !bMKeyState) {
+		bMKeyState = true;
+		m_renderFog = !m_renderFog; // Toggle flag
+	}
+	else if (!Application::IsKeyPressed('M') && bMKeyState) {
+		bMKeyState = false;
+	}
+
+	static bool bLKeyState = false;
+	if (Application::IsKeyPressed('L') && !bLKeyState) {
+		bLKeyState = true;
+		m_currentTeamFog = (m_currentTeamFog + 1) % 2; // Toggle between 0 (Red) and 1 (Blue)
+	}
+	else if (!Application::IsKeyPressed('L') && bLKeyState) {
+		bLKeyState = false;
+	}
+
 	static bool bTKeyState = false;
 	if (Application::IsKeyPressed('T') && !bTKeyState) {
 		bTKeyState = true;
@@ -248,7 +274,6 @@ void SceneSandbox::Update(double dt)
 	if (Application::IsKeyPressed(VK_OEM_PLUS) || Application::IsKeyPressed(VK_ADD)) {
 		m_turnInterval = max(0.01f, m_turnInterval - (float)dt * 0.5f);
 	}
-	// Press '-' to make turns slower (increase interval)
 	if (Application::IsKeyPressed(VK_OEM_MINUS) || Application::IsKeyPressed(VK_SUBTRACT)) {
 		m_turnInterval += (float)dt * 0.5f;
 	}
@@ -266,6 +291,7 @@ void SceneSandbox::Update(double dt)
 	if (!m_simulationEnded)
 	{
 		UpdateSpatialGrid();
+		UpdateFogOfWar(m_currentTeamFog);
 
 		switch (m_currPhase)
 		{
@@ -478,9 +504,6 @@ float SceneSandbox::GetTerrainMovementCost(TERRAIN_TYPE type, GameObject::GAMEOB
 	case TERRAIN_MUD:
 		cost = 4.0f; // Very Slow
 		break;
-	case TERRAIN_MOUNTAIN:
-		cost = 5.0f; // Extremely Slow
-		break;
 	case TERRAIN_WALL:
 	case TERRAIN_WATER:
 		return FLT_MAX; // Impassable
@@ -493,14 +516,12 @@ float SceneSandbox::GetTerrainMovementCost(TERRAIN_TYPE type, GameObject::GAMEOB
 	// SCOUT: Expert explorer, moves fast through rough terrain
 	if (unitType == GameObject::GO_SCOUT) {
 		if (type == TERRAIN_FOREST) cost = 1.0f;    // No penalty in forest
-		if (type == TERRAIN_MOUNTAIN) cost = 3.0f;  // Climbs well
 		if (type == TERRAIN_MUD) cost = 2.0f;       // Light feet
 	}
 	// TANK: Heavy treads, ignores mud but slow on mountains
 	else if (unitType == GameObject::GO_TANK) {
 		if (type == TERRAIN_MUD) cost = 2.0f;       // Treads grip mud
 		if (type == TERRAIN_FOREST) cost = 4.0f;    // Too big for trees
-		if (type == TERRAIN_MOUNTAIN) cost = 6.0f;  // Too heavy
 	}
 	// WORKER: Very dependent on Roads
 	else if (unitType == GameObject::GO_WORKER || unitType == GameObject::GO_STRONG_ANT_WORKER) {
@@ -514,15 +535,18 @@ float SceneSandbox::GetTerrainMovementCost(TERRAIN_TYPE type, GameObject::GAMEOB
 
 void SceneSandbox::DetectNearbyEntities(GameObject* go)
 {
-	// Logic remains similar but ensures we access Grid safely
 	if (go->type == GameObject::GO_FOOD || go->type == GameObject::GO_QUEEN || go->type == GameObject::GO_STRONG_ANT_QUEEN) return;
+
 	go->targetEnemy = nullptr;
 	float nearestEnemyDistSq = FLT_MAX;
+
 	int gridX = static_cast<int>(go->pos.x / m_gridSize);
 	int gridY = static_cast<int>(go->pos.y / m_gridSize);
 
-	for (int dy = -2; dy <= 2; ++dy) {
-		for (int dx = -2; dx <= 2; ++dx) {
+	int scanRange = 4;
+
+	for (int dy = -scanRange; dy <= scanRange; ++dy) {
+		for (int dx = -scanRange; dx <= scanRange; ++dx) {
 			int checkX = gridX + dx; int checkY = gridY + dy;
 			if (checkX < 0 || checkX >= m_noGrid || checkY < 0 || checkY >= m_noGrid) continue;
 			int cellKey = checkY * m_noGrid + checkX;
@@ -531,10 +555,14 @@ void SceneSandbox::DetectNearbyEntities(GameObject* go)
 				if (!other->active || other == go) continue;
 				if (other->teamID != go->teamID && other->teamID >= 0 && go->teamID >= 0) {
 					if (other->type == GameObject::GO_FOOD) continue;
-					float distSq = (go->pos - other->pos).LengthSquared();
-					if (distSq < go->detectionRange * go->detectionRange && distSq < nearestEnemyDistSq) {
-						nearestEnemyDistSq = distSq;
-						go->targetEnemy = other;
+
+					if (CanSee(go, other))
+					{
+						float distSq = (go->pos - other->pos).LengthSquared();
+						if (distSq < nearestEnemyDistSq) {
+							nearestEnemyDistSq = distSq;
+							go->targetEnemy = other;
+						}
 					}
 				}
 			}
@@ -639,7 +667,6 @@ void SceneSandbox::GenerateMap()
 
 				if (noise < -2.0f) m_terrainGrid[idx] = TERRAIN_WATER;
 				else if (noise < -1.0f) m_terrainGrid[idx] = TERRAIN_MUD;
-				else if (noise > 2.2f) m_terrainGrid[idx] = TERRAIN_MOUNTAIN; // New High Cost
 				else if (noise > 1.2f) m_terrainGrid[idx] = TERRAIN_FOREST;
 			}
 		}
@@ -960,6 +987,136 @@ bool SceneSandbox::Handle(Message* message) {
 	return true;
 }
 
+bool SceneSandbox::IsSightBlocker(TERRAIN_TYPE type) const
+{
+	return (type == TERRAIN_WALL || type == TERRAIN_FOREST);
+}
+
+bool SceneSandbox::HasLineOfSight(int x1, int y1, int x2, int y2) const
+{
+	int dx = abs(x2 - x1);
+	int dy = abs(y2 - y1);
+	int sx = (x1 < x2) ? 1 : -1;
+	int sy = (y1 < y2) ? 1 : -1;
+	int err = dx - dy;
+
+	int cx = x1;
+	int cy = y1;
+
+	while (true)
+	{
+		if (cx == x2 && cy == y2) return true;
+
+		if (cx != x1 || cy != y1)
+		{
+			if (!IsWithinBoundary(cx) || !IsWithinBoundary(cy)) return false;
+			int idx = Get1DIndex(cx, cy);
+			if (IsSightBlocker(m_terrainGrid[idx])) return false;
+		}
+
+		int e2 = 2 * err;
+		if (e2 > -dy)
+		{
+			err -= dy;
+			cx += sx;
+		}
+		if (e2 < dx)
+		{
+			err += dx;
+			cy += sy;
+		}
+	}
+	return true;
+}
+
+bool SceneSandbox::CanSee(GameObject* observer, GameObject* target)
+{
+	if (!observer || !target) return false;
+
+	int x1 = (int)(observer->pos.x / m_gridSize);
+	int y1 = (int)(observer->pos.y / m_gridSize);
+	int x2 = (int)(target->pos.x / m_gridSize);
+	int y2 = (int)(target->pos.y / m_gridSize);
+
+	if (x1 == x2 && y1 == y2) return true;
+
+	switch (observer->visibilityType)
+	{
+	case GameObject::VISIBILITY_1_TILE:
+	{
+		int dx = abs(x1 - x2);
+		int dy = abs(y1 - y2);
+		if (dx <= 1 && dy <= 1)
+		{
+			return HasLineOfSight(x1, y1, x2, y2);
+		}
+		return false;
+	}
+	case GameObject::VISIBILITY_2_TILE_OMNI:
+	{
+		int dx = abs(x1 - x2);
+		int dy = abs(y1 - y2);
+		if (dx <= 2 && dy <= 2)
+		{
+			return HasLineOfSight(x1, y1, x2, y2);
+		}
+		return false;
+	}
+	case GameObject::VISIBILITY_3_TILE_LINEAR:
+	{
+		int dx = abs(x1 - x2);
+		int dy = abs(y1 - y2);
+
+		bool isStraight = (dx == 0) || (dy == 0) || (dx == dy);
+
+		if (isStraight && dx <= 3 && dy <= 3)
+		{
+			return HasLineOfSight(x1, y1, x2, y2);
+		}
+		return false;
+	}
+	}
+	return false;
+}
+
+void SceneSandbox::UpdateFogOfWar(int teamID)
+{
+	std::fill(m_fogGrid.begin(), m_fogGrid.end(), true);
+
+	for (GameObject* go : m_goList)
+	{
+		if (!go->active || go->teamID != teamID) continue;
+
+		int gx = (int)(go->pos.x / m_gridSize);
+		int gy = (int)(go->pos.y / m_gridSize);
+
+		int range = 0;
+		if (go->visibilityType == GameObject::VISIBILITY_3_TILE_LINEAR) range = 3;
+		else if (go->visibilityType == GameObject::VISIBILITY_2_TILE_OMNI) range = 2;
+		else range = 1;
+
+		for (int y = gy - range; y <= gy + range; ++y)
+		{
+			for (int x = gx - range; x <= gx + range; ++x)
+			{
+				if (IsWithinBoundary(x) && IsWithinBoundary(y))
+				{
+					int idx = Get1DIndex(x, y);
+					if (m_fogGrid[idx])
+					{
+						GameObject tempTarget;
+						tempTarget.pos.Set(x * m_gridSize + m_gridOffset, y * m_gridSize + m_gridOffset, 0);
+						if (CanSee(go, &tempTarget))
+						{
+							m_fogGrid[idx] = false;
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 void SceneSandbox::RenderGO(GameObject* go)
 {
 	// 1. Move to Object Position
@@ -1088,8 +1245,31 @@ void SceneSandbox::Render()
 			else if (type == TERRAIN_FOREST) {
 				RenderMesh(meshList[GEO_FOREST], true);
 			}
+			else if (type == TERRAIN_ROAD) {
+				RenderMesh(meshList[GEO_ROAD], true);
+			}
 
 			modelStack.PopMatrix();
+		}
+	}
+
+	if (m_renderFog)
+	{
+		for (int row = 0; row < m_noGrid; ++row)
+		{
+			for (int col = 0; col < m_noGrid; ++col)
+			{
+				if (m_fogGrid[Get1DIndex(col, row)])
+				{
+					modelStack.PushMatrix();
+					modelStack.Translate(col * m_gridSize + m_gridOffset, row * m_gridSize + m_gridOffset, 2.0f);
+					modelStack.Scale(m_gridSize, m_gridSize, 1.f);
+					meshList[GEO_WHITEQUAD]->material.kAmbient.Set(0.1f, 0.1f, 0.1f);
+					RenderMesh(meshList[GEO_WHITEQUAD], true);
+					meshList[GEO_WHITEQUAD]->material.kAmbient.Set(1.f, 1.f, 1.f);
+					modelStack.PopMatrix();
+				}
+			}
 		}
 	}
 
@@ -1225,10 +1405,16 @@ void SceneSandbox::Render()
 		RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.5f, 1, 0.5f), 2.5f, uiX, uiY); uiY -= spacing;
 	}
 
-	uiY -= spacing; // Extra gap
+	uiY -= spacing;
 	ss.str(""); ss << "[T] Toggle Mode";
 	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX, uiY); uiY -= spacing;
+
+	// --- NEW: INSTRUCTION FOR FOG TOGGLE ---
+	ss.str(""); ss << "[M] Toggle Map View";
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX, uiY); uiY -= spacing;
 	// --------------------------
+	ss.str(""); ss << "[L] Switch Fog Team";
+	RenderTextOnScreen(meshList[GEO_TEXT], ss.str(), Color(0.8f, 0.8f, 0.8f), 2.0f, uiX, uiY); uiY -= spacing;
 
 	uiY -= spacing;
 

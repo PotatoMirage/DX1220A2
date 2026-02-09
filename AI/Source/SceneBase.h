@@ -91,6 +91,7 @@ public:
 		GEO_MUD,
 		GEO_WATER,
 		GEO_FOREST,
+		GEO_ROAD,
 		// --- UI ---
 		GEO_HPBAR_GREEN,
 		GEO_HPBAR_RED,

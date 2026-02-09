@@ -23,12 +23,11 @@ public:
 		TERRAIN_FLOOR,    
 		TERRAIN_FOREST,   
 		TERRAIN_MUD,      
-		TERRAIN_MOUNTAIN, 
 		TERRAIN_WALL,     
 		TERRAIN_WATER,
 		NUM_TERRAIN
 	};
-
+	
 	SceneSandbox();
 	~SceneSandbox();
 
@@ -126,4 +125,13 @@ protected:
 	float m_updateTimer;
 	int m_updateCycle;
 	bool m_coloniesDetected;
+
+	bool CanSee(GameObject* observer, GameObject* target);
+	bool HasLineOfSight(int x1, int y1, int x2, int y2) const;
+	bool IsSightBlocker(TERRAIN_TYPE type) const;
+
+	std::vector<bool> m_fogGrid;
+	bool m_renderFog;
+	int m_currentTeamFog;
+	void UpdateFogOfWar(int teamID);
 };

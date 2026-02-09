@@ -37,7 +37,8 @@ GameObject::GameObject(GAMEOBJECT_TYPE typeValue)
 	isMarked(false),
 	prevPos(0, 0, 0),
 	idleTimer(0.f),
-	repathTimer(0.f)
+	repathTimer(0.f),
+	visibilityType(VISIBILITY_1_TILE)
 {
 	static int count = 0;
 	id = ++count;

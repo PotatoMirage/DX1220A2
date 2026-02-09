@@ -207,6 +207,8 @@ void SceneBase::Init()
 	meshList[GEO_WATER]->textureID = LoadTGA("Image//floor.tga");
 	meshList[GEO_FOREST] = MeshBuilder::GenerateQuad("Forest", Color(1.f, 1.f, 1.f), 1.f);
 	meshList[GEO_FOREST]->textureID = LoadTGA("Image//Forest.tga");
+	meshList[GEO_ROAD] = MeshBuilder::GenerateQuad("Road", Color(1.f, 1.f, 1.f), 1.f);
+	meshList[GEO_ROAD]->textureID = LoadTGA("Image//Road.tga");
 
 	bLightEnabled = false;
 }

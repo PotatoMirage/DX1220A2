@@ -53,6 +53,12 @@ struct GameObject : public ObjectBase
 		//Assignment 1
 
 	};
+	enum VISIBILITY_TYPE
+	{
+		VISIBILITY_1_TILE,
+		VISIBILITY_2_TILE_OMNI,
+		VISIBILITY_3_TILE_LINEAR
+	};
 	GAMEOBJECT_TYPE type;
 	Vector3 pos;
 	Vector3 vel;
@@ -127,6 +133,7 @@ struct GameObject : public ObjectBase
 	Vector3 prevPos;
 	float idleTimer;
 	float repathTimer;
+	VISIBILITY_TYPE visibilityType;
 };
 
 #endif
