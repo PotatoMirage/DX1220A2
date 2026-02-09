@@ -357,24 +357,19 @@ void SceneSandbox::Update(double dt)
 
 void SceneSandbox::ProcessTurnLogic()
 {
-	// [NEW] Random Event System
-	// Decrease event timer
 	if (m_eventDuration > 0) {
 		m_eventDuration--;
 		if (m_eventDuration <= 0) {
 			m_currentEvent = EVENT_NONE;
-			std::cout << "Event Ended." << std::endl;
 		}
 	}
 
-	// Trigger Sudden Death after 1000 Turns
 	if (m_turnNumber > 1000) {
 		m_currentEvent = EVENT_SUDDEN_DEATH;
 		TriggerSuddenDeathStrike();
 	}
-	// Small chance to trigger new random event if none is active
 	else if (m_currentEvent == EVENT_NONE) {
-		if (Math::RandIntMinMax(0, 100) < 5) { // 5% chance per turn
+		if (Math::RandIntMinMax(0, 100) < 5) {
 			ProcessRandomEvents();
 		}
 	}
@@ -403,7 +398,10 @@ void SceneSandbox::ProcessTurnLogic()
 		int gridX = static_cast<int>(go->pos.x / m_gridSize);
 		int gridY = static_cast<int>(go->pos.y / m_gridSize);
 		MazePt startPt(gridX, gridY);
-		MazePt targetPt(static_cast<int>(go->target.x / m_gridSize), static_cast<int>(go->target.y / m_gridSize));
+
+		int targetGridX = static_cast<int>(go->target.x / m_gridSize);
+		int targetGridY = static_cast<int>(go->target.y / m_gridSize);
+		MazePt targetPt(targetGridX, targetGridY);
 
 		if (go->targetFoodItem != nullptr && go->targetFoodItem->active) {
 			bool shouldSnap = false;
@@ -414,23 +412,32 @@ void SceneSandbox::ProcessTurnLogic()
 			}
 		}
 
-		if ((!go->path.empty() && (go->path.back().x != targetPt.x || go->path.back().y != targetPt.y)) || go->path.empty())
+		bool needRepath = false;
+		if (go->path.empty())
 		{
-			if (gridX != targetPt.x || gridY != targetPt.y) {
-				bool useDFS = false;
-				if (go->type == GameObject::GO_SCOUT) useDFS = true;
-				if (go->type == GameObject::GO_WORKER && !go->isCarryingResource && go->targetFoodItem == nullptr) useDFS = true;
+			if (gridX != targetPt.x || gridY != targetPt.y) needRepath = true;
+		}
+		else
+		{
+			MazePt pathEnd = go->path.back();
+			if (pathEnd.x != targetPt.x || pathEnd.y != targetPt.y) needRepath = true;
+		}
 
-				if (useDFS) {
-					go->path = FindPathDFS(startPt, targetPt);
-				}
-				else {
-					go->path = FindPathAStar(startPt, targetPt, go->type);
-				}
+		if (needRepath)
+		{
+			bool useDFS = false;
+			if (go->type == GameObject::GO_SCOUT) useDFS = true;
+			if (go->type == GameObject::GO_WORKER && !go->isCarryingResource && go->targetFoodItem == nullptr) useDFS = true;
 
-				if (!go->path.empty() && go->path[0].x == gridX && go->path[0].y == gridY)
-					go->path.erase(go->path.begin());
+			if (useDFS) {
+				go->path = FindPathDFS(startPt, targetPt);
 			}
+			else {
+				go->path = FindPathAStar(startPt, targetPt, go->type);
+			}
+
+			if (!go->path.empty() && go->path[0].x == gridX && go->path[0].y == gridY)
+				go->path.erase(go->path.begin());
 		}
 
 		if (!go->path.empty())
@@ -588,9 +595,17 @@ float SceneSandbox::GetTileCost(int x, int y, GameObject::GAMEOBJECT_TYPE unitTy
 {
 	if (!IsWithinBoundary(x) || !IsWithinBoundary(y)) return FLT_MAX;
 
-	// Check for dynamic obstacles (Units/Buildings) if strict pathfinding is desired
-	// For now, we only check static Terrain costs
-	return GetTerrainMovementCost(m_terrainGrid[Get1DIndex(x, y)], unitType);
+	int idx = Get1DIndex(x, y);
+	float cost = GetTerrainMovementCost(m_terrainGrid[idx], unitType);
+
+	if (cost >= FLT_MAX) return FLT_MAX;
+
+	if (!m_spatialGrid[idx].empty())
+	{
+		cost += 5.0f;
+	}
+
+	return cost;
 }
 
 float SceneSandbox::GetTerrainMovementCost(TERRAIN_TYPE type, GameObject::GAMEOBJECT_TYPE unitType) const
@@ -911,7 +926,6 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 	end = FindNearestWalkableTile(end);
 
 	if (start.x == end.x && start.y == end.y) return path;
-
 	if (!IsWalkable(m_terrainGrid[Get1DIndex(end.x, end.y)])) return path;
 
 	struct Node {
@@ -943,8 +957,7 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 			break;
 		}
 
-		if (gScore[current.index] == FLT_MAX) continue;
-		if (current.fCost > gScore[current.index] + (float)((abs(end.x - (current.index % m_noGrid)) + abs(end.y - (current.index / m_noGrid))) * 5.0f)) continue;
+		if (current.fCost > gScore[current.index] + 200.0f) continue;
 
 		int cx = current.index % m_noGrid;
 		int cy = current.index / m_noGrid;
@@ -962,7 +975,9 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 					if (newG < gScore[nIdx]) {
 						gScore[nIdx] = newG;
 						parent[nIdx] = current.index;
-						float h = (float)(abs(end.x - nx) + abs(end.y - ny));
+						float dx = (float)(end.x - nx);
+						float dy = (float)(end.y - ny);
+						float h = sqrt(dx * dx + dy * dy);
 						openList.push({ nIdx, newG + h });
 					}
 				}

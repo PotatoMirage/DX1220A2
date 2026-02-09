@@ -6,7 +6,7 @@
 
 // --- GLOBALS ---
 static std::vector<bool> g_visitedNodes[2];
-static bool g_enemyColonyFound[2] = { false, false }; // [Cite: User Requirement 2]
+static bool g_enemyColonyFound[2];
 static Vector3 g_enemyColonyPos[2];
 
 void ResizeVisitedNodes() {
@@ -156,9 +156,7 @@ StateSoldierPatrolling::StateSoldierPatrolling(const std::string& stateID, GameO
 StateSoldierPatrolling::~StateSoldierPatrolling() {}
 void StateSoldierPatrolling::Enter() { m_go->moveSpeed = m_go->baseSpeed; patrolTimer = 0.f; patrolTarget.SetZero(); }
 void StateSoldierPatrolling::Update(double dt) {
-	// 1. Priority: Attack nearby enemies
 	if (m_go->targetEnemy && m_go->targetEnemy->active) {
-		// [Existing attack logic...]
 		if (m_go->targetEnemy->type == GameObject::GO_SCOUT) {
 			float distToBase = (m_go->targetEnemy->pos - m_go->homeBase).LengthSquared();
 			float alertRadius = (SceneData::GetInstance()->GetGridSize() * 3.f) * (SceneData::GetInstance()->GetGridSize() * 3.f);
@@ -175,14 +173,12 @@ void StateSoldierPatrolling::Update(double dt) {
 		return;
 	}
 
-	// 2. New Logic: Rush to Enemy Colony if Detected
 	if (g_enemyColonyFound[m_go->teamID]) {
 		m_go->target = g_enemyColonyPos[m_go->teamID];
-		m_go->moveSpeed = m_go->baseSpeed * 1.5f; // Move faster when rushing
-		return; // Skip normal patrol logic
+		m_go->moveSpeed = m_go->baseSpeed * 1.5f;
+		return;
 	}
 
-	// 3. Normal Patrol Logic
 	patrolTimer += (float)dt;
 	if (patrolTimer > 4.f || patrolTarget.IsZero() || (m_go->pos - m_go->target).LengthSquared() < 0.5f) {
 		patrolTimer = 0.f;
@@ -198,14 +194,15 @@ void StateSoldierAttacking::Enter() { m_go->moveSpeed = m_go->baseSpeed; attackC
 void StateSoldierAttacking::Update(double dt) {
 	if (m_go->health < m_go->maxHealth * 0.4f) { m_go->sm->SetNextState("Retreating"); return; }
 
-	// Ignore Trails
 	if (m_go->targetEnemy && m_go->targetEnemy->type == GameObject::GO_PHEROMONE) {
 		m_go->targetEnemy = nullptr; m_go->sm->SetNextState("Patrolling"); return;
 	}
 
 	attackCooldown += (float)dt;
 	if (!m_go->targetEnemy || !m_go->targetEnemy->active) { m_go->targetEnemy = nullptr; m_go->sm->SetNextState("Resting"); return; }
+
 	m_go->target = m_go->targetEnemy->pos;
+
 	if ((m_go->pos - m_go->targetEnemy->pos).LengthSquared() < m_go->attackRange * m_go->attackRange) {
 		if (attackCooldown > 0.5f) {
 			m_go->targetEnemy->health -= m_go->attackPower;
@@ -479,5 +476,20 @@ void StateTankGuarding::Enter() { m_go->moveSpeed = m_go->baseSpeed; }
 void StateTankGuarding::Update(double dt) { m_go->target = m_go->homeBase; if (m_go->targetEnemy && m_go->targetEnemy->active) { if ((m_go->pos - m_go->targetEnemy->pos).LengthSquared() < m_go->attackRange * m_go->attackRange) m_go->sm->SetNextState("Blocking"); } if (m_go->health < m_go->maxHealth * 0.4f) m_go->sm->SetNextState("Recovering"); }
 void StateTankGuarding::Exit() {}
 void StateTankBlocking::Enter() { m_go->moveSpeed = 0.f; attackTimer = 0.f; }
-void StateTankBlocking::Update(double dt) { if (!m_go->targetEnemy || !m_go->targetEnemy->active || (m_go->pos - m_go->targetEnemy->pos).LengthSquared() > m_go->attackRange * m_go->attackRange * 1.5f) { m_go->targetEnemy = nullptr; m_go->sm->SetNextState("Guarding"); return; } attackTimer += (float)dt; if (attackTimer > 1.5f) { m_go->targetEnemy->health -= m_go->attackPower; attackTimer = 0.f; if (m_go->targetEnemy->health <= 0) { PostOffice::GetInstance()->Send("Scene", new MessageUnitDied(m_go->targetEnemy, m_go->targetEnemy->teamID, m_go->targetEnemy->type)); m_go->targetEnemy->active = false; } } if (m_go->health < m_go->maxHealth * 0.3f) m_go->sm->SetNextState("Recovering"); }
-void StateTankBlocking::Exit() {}
+void StateTankBlocking::Update(double dt) {
+	if (!m_go->targetEnemy || !m_go->targetEnemy->active || (m_go->pos - m_go->targetEnemy->pos).LengthSquared() > m_go->attackRange * m_go->attackRange * 1.5f) {
+		m_go->targetEnemy = nullptr;
+		m_go->sm->SetNextState("Guarding");
+		return;
+	}
+	attackTimer += (float)dt;
+	if (attackTimer > 1.5f) {
+		m_go->targetEnemy->health -= m_go->attackPower;
+		attackTimer = 0.f;
+		if (m_go->targetEnemy->health <= 0) {
+			PostOffice::GetInstance()->Send("Scene", new MessageUnitDied(m_go->targetEnemy, m_go->targetEnemy->teamID, m_go->targetEnemy->type));
+			m_go->targetEnemy->active = false;
+		}
+	}
+	if (m_go->health < m_go->maxHealth * 0.3f) m_go->sm->SetNextState("Recovering");
+}void StateTankBlocking::Exit() {}
