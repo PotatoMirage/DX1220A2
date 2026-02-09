@@ -84,6 +84,7 @@ protected:
 	void EnsureConnectivity();
 	void FillDeadZones();
 	bool IsWalkable(TERRAIN_TYPE type) const;
+	MazePt FindNearestWalkableTile(MazePt pt);
 
 	// Game state
 	std::vector<GameObject*> m_goList;

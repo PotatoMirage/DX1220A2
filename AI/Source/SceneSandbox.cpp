@@ -839,12 +839,9 @@ void SceneSandbox::EnsureConnectivity()
 	MazePt start(3, 3);
 	MazePt end(m_noGrid - 4, m_noGrid - 4);
 
-	// FIX: Pass GameObject::GO_WORKER as the reference unit for map testing.
-	// We want to ensure a standard unit can walk from base to base.
 	auto path = FindPathAStar(start, end, GameObject::GO_WORKER);
 
 	if (path.empty()) {
-		// Brute force path carving (Bresenham line) if disconnected
 		int x0 = start.x; int y0 = start.y;
 		int x1 = end.x; int y1 = end.y;
 		int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
@@ -852,16 +849,22 @@ void SceneSandbox::EnsureConnectivity()
 		int err = dx + dy, e2;
 
 		while (true) {
-			// Force floor on the path
 			m_terrainGrid[Get1DIndex(x0, y0)] = TERRAIN_FLOOR;
-
-			// Mirror the carve to maintain symmetry
 			m_terrainGrid[Get1DIndex(m_noGrid - 1 - x0, m_noGrid - 1 - y0)] = TERRAIN_FLOOR;
 
 			if (x0 == x1 && y0 == y1) break;
+
+			int prevX = x0;
+			int prevY = y0;
+
 			e2 = 2 * err;
 			if (e2 >= dy) { err += dy; x0 += sx; }
 			if (e2 <= dx) { err += dx; y0 += sy; }
+
+			if (x0 != prevX && y0 != prevY) {
+				m_terrainGrid[Get1DIndex(x0, prevY)] = TERRAIN_FLOOR;
+				m_terrainGrid[Get1DIndex(m_noGrid - 1 - x0, m_noGrid - 1 - prevY)] = TERRAIN_FLOOR;
+			}
 		}
 	}
 }
@@ -904,7 +907,11 @@ void SceneSandbox::FillDeadZones()
 std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameObject::GAMEOBJECT_TYPE unitType)
 {
 	std::vector<MazePt> path;
+
+	end = FindNearestWalkableTile(end);
+
 	if (start.x == end.x && start.y == end.y) return path;
+
 	if (!IsWalkable(m_terrainGrid[Get1DIndex(end.x, end.y)])) return path;
 
 	struct Node {
@@ -923,7 +930,8 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 	gScore[startIdx] = 0.f;
 	openList.push({ startIdx, 0.f });
 
-	int dx[] = { 0, 0, -1, 1 }; int dy[] = { 1, -1, 0, 0 };
+	int dx[] = { 0, 0, -1, 1 };
+	int dy[] = { 1, -1, 0, 0 };
 	bool found = false;
 
 	while (!openList.empty()) {
@@ -935,7 +943,8 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 			break;
 		}
 
-		if (current.fCost > gScore[current.index] + (float)((abs(end.x - (current.index % m_noGrid)) + abs(end.y - (current.index / m_noGrid))) * 2.0f)) continue;
+		if (gScore[current.index] == FLT_MAX) continue;
+		if (current.fCost > gScore[current.index] + (float)((abs(end.x - (current.index % m_noGrid)) + abs(end.y - (current.index / m_noGrid))) * 5.0f)) continue;
 
 		int cx = current.index % m_noGrid;
 		int cy = current.index / m_noGrid;
@@ -945,10 +954,8 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 			if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
 				int nIdx = Get1DIndex(nx, ny);
 
-				// Get Cost for THIS unit type
 				float tileCost = GetTileCost(nx, ny, unitType);
 
-				// If tile is effectively impassable for this unit (cost very high), skip
 				if (tileCost < 100.0f) {
 					float newG = gScore[current.index] + tileCost;
 
@@ -956,7 +963,6 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 						gScore[nIdx] = newG;
 						parent[nIdx] = current.index;
 						float h = (float)(abs(end.x - nx) + abs(end.y - ny));
-						// Weight heuristic by min cost (1.0f) to maintain admissibility
 						openList.push({ nIdx, newG + h });
 					}
 				}
@@ -975,10 +981,12 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameOb
 	return path;
 }
 
-// --- DFS ALGORITHM (Exploratory, Unweighted, "Wandering") ---
 std::vector<MazePt> SceneSandbox::FindPathDFS(MazePt start, MazePt end)
 {
 	std::vector<MazePt> path;
+
+	end = FindNearestWalkableTile(end);
+
 	if (start.x == end.x && start.y == end.y) return path;
 	if (!IsWalkable(m_terrainGrid[Get1DIndex(end.x, end.y)])) return path;
 
@@ -993,12 +1001,18 @@ std::vector<MazePt> SceneSandbox::FindPathDFS(MazePt start, MazePt end)
 	visited[startIdx] = true;
 
 	bool found = false;
-	// Shuffle directions for random-looking exploration
-	int dirs[4] = { 0, 1, 2, 3 };
-	// std::random_shuffle is deprecated in C++17, but simple manual shuffle or fixed is fine. 
-	// Fixed order in DFS creates "snaking" patterns.
+
 	int dx[] = { 0, 0, -1, 1 };
 	int dy[] = { 1, -1, 0, 0 };
+
+	// Randomize directions for more organic exploration
+	int dirOrder[] = { 0, 1, 2, 3 };
+	for (int i = 0; i < 4; ++i) {
+		int r = Math::RandIntMinMax(0, 3);
+		int temp = dirOrder[i];
+		dirOrder[i] = dirOrder[r];
+		dirOrder[r] = temp;
+	}
 
 	while (!s.empty()) {
 		int currIdx = s.top();
@@ -1012,10 +1026,10 @@ std::vector<MazePt> SceneSandbox::FindPathDFS(MazePt start, MazePt end)
 		int cx = currIdx % m_noGrid;
 		int cy = currIdx / m_noGrid;
 
-		// Check neighbors
 		for (int i = 0; i < 4; ++i) {
-			int nx = cx + dx[i];
-			int ny = cy + dy[i];
+			int dir = dirOrder[i];
+			int nx = cx + dx[dir];
+			int ny = cy + dy[dir];
 
 			if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
 				int nIdx = Get1DIndex(nx, ny);
@@ -1037,6 +1051,50 @@ std::vector<MazePt> SceneSandbox::FindPathDFS(MazePt start, MazePt end)
 		std::reverse(path.begin(), path.end());
 	}
 	return path;
+}
+MazePt SceneSandbox::FindNearestWalkableTile(MazePt pt)
+{
+	if (IsWithinBoundary(pt.x) && IsWithinBoundary(pt.y) && IsWalkable(m_terrainGrid[Get1DIndex(pt.x, pt.y)]))
+		return pt;
+
+	std::queue<MazePt> q;
+	q.push(pt);
+
+	std::vector<bool> visited(m_noGrid * m_noGrid, false);
+	if (IsWithinBoundary(pt.x) && IsWithinBoundary(pt.y))
+		visited[Get1DIndex(pt.x, pt.y)] = true;
+
+	int dx[] = { 0, 0, -1, 1, -1, 1, -1, 1 };
+	int dy[] = { 1, -1, 0, 0, -1, -1, 1, 1 };
+
+	int searchLimit = 0;
+
+	while (!q.empty() && searchLimit < 100)
+	{
+		MazePt curr = q.front();
+		q.pop();
+		searchLimit++;
+
+		for (int i = 0; i < 8; ++i)
+		{
+			int nx = curr.x + dx[i];
+			int ny = curr.y + dy[i];
+
+			if (IsWithinBoundary(nx) && IsWithinBoundary(ny))
+			{
+				int idx = Get1DIndex(nx, ny);
+				if (!visited[idx])
+				{
+					if (IsWalkable(m_terrainGrid[idx]))
+						return MazePt(nx, ny);
+
+					visited[idx] = true;
+					q.push(MazePt(nx, ny));
+				}
+			}
+		}
+	}
+	return pt;
 }
 bool SceneSandbox::IsWalkable(TERRAIN_TYPE type) const {
 	return type != TERRAIN_WALL && type != TERRAIN_WATER;

@@ -105,7 +105,7 @@ bool Application::LoadScene()
 		std::cout << "13. Week 13. SceneHex" << std::endl;
 		std::cout << "14. Week 14. SceneReversi" << std::endl;
 		std::cout << "15. Week 16. SceneFlappyBird" << std::endl;
-		std::cout << "16. Assignment 1" << std::endl;
+		std::cout << "16. Assignment 2" << std::endl;
 		std::cout << "0. Exit" << std::endl;
 		std::cout << "Enter your choice: ";
 
