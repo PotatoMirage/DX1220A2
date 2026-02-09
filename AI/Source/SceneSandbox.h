@@ -19,11 +19,13 @@ public:
 	// New Terrain Types
 	enum TERRAIN_TYPE
 	{
-		TERRAIN_FLOOR,
-		TERRAIN_WALL,
-		TERRAIN_MUD,
+		TERRAIN_ROAD,     
+		TERRAIN_FLOOR,    
+		TERRAIN_FOREST,   
+		TERRAIN_MUD,      
+		TERRAIN_MOUNTAIN, 
+		TERRAIN_WALL,     
 		TERRAIN_WATER,
-		TERRAIN_FOREST,
 		NUM_TERRAIN
 	};
 
@@ -40,7 +42,7 @@ public:
 
 	GameObject* FetchGO(GameObject::GAMEOBJECT_TYPE type);
 	void SpawnUnit(MessageSpawnUnit::UNIT_TYPE unitType, Vector3 position, int teamID);
-	std::vector<MazePt> FindPathAStar(MazePt start, MazePt end); // For Chase/Attack
+	std::vector<MazePt> FindPathAStar(MazePt start, MazePt end, GameObject::GAMEOBJECT_TYPE unitType);
 	std::vector<MazePt> FindPathDFS(MazePt start, MazePt end);   // For Exploration
 
 protected:
@@ -56,8 +58,8 @@ protected:
 
 	void ProcessTurnLogic();
 	bool ProcessTurnAnimation(double dt);
-	float GetTileCost(int x, int y) const;
-	float GetTerrainMovementCost(TERRAIN_TYPE type) const;
+	float GetTileCost(int x, int y, GameObject::GAMEOBJECT_TYPE unitType) const;
+	float GetTerrainMovementCost(TERRAIN_TYPE terrain, GameObject::GAMEOBJECT_TYPE unitType) const;
 
 	// Helper functions
 	int IsWithinBoundary(int x) const;
@@ -88,7 +90,7 @@ protected:
 
 	// Terrain Data
 	std::vector<TERRAIN_TYPE> m_terrainGrid;
-	std::vector<bool> m_foodGrid; // Kept for logic tracking
+	std::vector<bool> m_foodGrid;
 
 	bool IsGridOccupied(int gridX, int gridY);
 	MazePt GetNearestVacantNeighbor(MazePt target, MazePt start);

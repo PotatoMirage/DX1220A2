@@ -16,7 +16,7 @@ SceneSandbox::SceneSandbox()
 	m_redWorkerCount{}, m_redResources{}, m_blueWorkerCount{}, m_blueResources{},
 	m_redQueen{}, m_blueQueen{}, m_simulationTime{}, m_simulationEnded{}, m_winner{}, m_updateTimer{}, m_updateCycle{},
 	m_terrainGrid{}, m_foodGrid{}, m_coloniesDetected(false),
-	m_currPhase(PHASE_LOGIC), m_turnNumber(0), m_animationSpeed(5.0f), m_autoTurn(false), m_turnTimer(0.f), m_turnInterval(0.5f)
+	m_currPhase(PHASE_LOGIC), m_turnNumber(0), m_animationSpeed(5.0f), m_autoTurn(false), m_turnTimer(0.f), m_turnInterval(0.05f)
 {
 }
 
@@ -33,7 +33,7 @@ void SceneSandbox::Init()
 	m_worldWidth = m_worldHeight * (float)Application::GetWindowWidth() / Application::GetWindowHeight();
 
 	m_speed = 1.f;
-	m_animationSpeed = 100.f;
+	m_animationSpeed = 500.f;
 
 	Math::InitRNG();
 
@@ -245,6 +245,13 @@ void SceneSandbox::Update(double dt)
 	else if (!Application::IsKeyPressed('T') && bTKeyState) {
 		bTKeyState = false;
 	}
+	if (Application::IsKeyPressed(VK_OEM_PLUS) || Application::IsKeyPressed(VK_ADD)) {
+		m_turnInterval = max(0.01f, m_turnInterval - (float)dt * 0.5f);
+	}
+	// Press '-' to make turns slower (increase interval)
+	if (Application::IsKeyPressed(VK_OEM_MINUS) || Application::IsKeyPressed(VK_SUBTRACT)) {
+		m_turnInterval += (float)dt * 0.5f;
+	}
 
 	bool manualNextTurn = false;
 	static bool bSpaceState = false;
@@ -326,14 +333,19 @@ void SceneSandbox::ProcessTurnLogic()
 		GameObject* go = m_goList[i];
 		if (!go->active) continue;
 
-		// 1. Cooldown
-		if (go->countDown > 0.f) {
+		// --- STRICT TURN COST SYSTEM ---
+		// If unit has cooldown (action points debt), it waits.
+		if (go->countDown > 0.0f) {
 			go->countDown -= 1.0f;
-			if (go->countDown > 0.01f) continue;
-			go->countDown = 0.f;
+			if (go->countDown > 0.0f) {
+				// Unit is recovering/traversing
+				continue;
+			}
+			// Cooldown finished this turn, reset and allow action
+			go->countDown = 0.0f;
 		}
 
-		// 2. Perception & State
+		// 1. Perception & State Update
 		DetectNearbyEntities(go);
 
 		if (go->type == GameObject::GO_WORKER && !go->isCarryingResource) FindNearestResource(go);
@@ -342,7 +354,7 @@ void SceneSandbox::ProcessTurnLogic()
 
 		if (go->sm) go->sm->Update(1.0f);
 
-		// 3. Movement Logic
+		// 2. Movement Calculation
 		int gridX = static_cast<int>(go->pos.x / m_gridSize);
 		int gridY = static_cast<int>(go->pos.y / m_gridSize);
 		MazePt startPt(gridX, gridY);
@@ -358,39 +370,28 @@ void SceneSandbox::ProcessTurnLogic()
 			}
 		}
 
-		// --- DECIDE PATHFINDING ALGORITHM ---
-		// Recompute path if target changed or path empty
+		// Recompute path
 		if ((!go->path.empty() && (go->path.back().x != targetPt.x || go->path.back().y != targetPt.y)) || go->path.empty())
 		{
 			if (gridX != targetPt.x || gridY != targetPt.y) {
-
-				// CHECK CONDITION: Explore vs Chase/Attack
 				bool useDFS = false;
-
-				// Scouts always explore with DFS unless returning home (optional)
 				if (go->type == GameObject::GO_SCOUT) useDFS = true;
-
-				// Workers searching for food use DFS
 				if (go->type == GameObject::GO_WORKER && !go->isCarryingResource && go->targetFoodItem == nullptr) useDFS = true;
 
-				// Soldiers use A* (default is false)
-				if (go->type == GameObject::GO_SOLDIER || go->type == GameObject::GO_TANK) useDFS = false;
-
-				// EXECUTE ALGORITHM
 				if (useDFS) {
 					go->path = FindPathDFS(startPt, targetPt);
 				}
 				else {
-					go->path = FindPathAStar(startPt, targetPt);
+					// Use A* with Unit-Specific Costs
+					go->path = FindPathAStar(startPt, targetPt, go->type);
 				}
 
-				// Trim start if it matches current pos
 				if (!go->path.empty() && go->path[0].x == gridX && go->path[0].y == gridY)
 					go->path.erase(go->path.begin());
 			}
 		}
 
-		// 4. Move
+		// 3. Execute Move
 		if (!go->path.empty())
 		{
 			MazePt nextStep = go->path.front();
@@ -401,8 +402,13 @@ void SceneSandbox::ProcessTurnLogic()
 			if (go->type == GameObject::GO_WORKER && !go->isCarryingResource)
 				go->pathHistory.push_back(nextStep);
 
-			float cost = GetTileCost(nextStep.x, nextStep.y);
-			go->countDown = cost;
+			// --- APPLY COST ---
+			// Calculate cost of entering the specific tile for this specific unit
+			float cost = GetTileCost(nextStep.x, nextStep.y, go->type);
+
+			// Subtract 1 immediately because the unit spends the CURRENT turn moving
+			// The remaining cost becomes the wait time
+			go->countDown = (cost > 1.0f) ? (cost - 1.0f) : 0.0f;
 
 			Vector3 dir = go->target - go->pos;
 			if (dir.LengthSquared() > 0.001f) go->viewDir = dir.Normalized();
@@ -443,20 +449,67 @@ bool SceneSandbox::ProcessTurnAnimation(double dt)
 	return anyMoving;
 }
 
-float SceneSandbox::GetTileCost(int x, int y) const
+float SceneSandbox::GetTileCost(int x, int y, GameObject::GAMEOBJECT_TYPE unitType) const
 {
 	if (!IsWithinBoundary(x) || !IsWithinBoundary(y)) return FLT_MAX;
-	return GetTerrainMovementCost(m_terrainGrid[Get1DIndex(x, y)]);
+
+	// Check for dynamic obstacles (Units/Buildings) if strict pathfinding is desired
+	// For now, we only check static Terrain costs
+	return GetTerrainMovementCost(m_terrainGrid[Get1DIndex(x, y)], unitType);
 }
-float SceneSandbox::GetTerrainMovementCost(TERRAIN_TYPE type) const
+
+float SceneSandbox::GetTerrainMovementCost(TERRAIN_TYPE type, GameObject::GAMEOBJECT_TYPE unitType) const
 {
+	// BASE COSTS (Cost = Turns spent)
+	// Road: 1 | Floor: 2 | Forest: 3 | Mud: 4 | Mountain: 5 | Water/Wall: INF
+
+	float cost = FLT_MAX;
+
 	switch (type) {
-	case TERRAIN_MUD: return 2.5f;   // Slow
-	case TERRAIN_FOREST: return 1.2f;// Slightly impeded
-	case TERRAIN_WATER: return FLT_MAX; // Blocked
-	case TERRAIN_WALL: return FLT_MAX;  // Blocked
-	default: return 1.0f;
+	case TERRAIN_ROAD:
+		cost = 1.0f; // Fast for everyone
+		break;
+	case TERRAIN_FLOOR:
+		cost = 2.0f; // Standard baseline
+		break;
+	case TERRAIN_FOREST:
+		cost = 3.0f; // Difficult
+		break;
+	case TERRAIN_MUD:
+		cost = 4.0f; // Very Slow
+		break;
+	case TERRAIN_MOUNTAIN:
+		cost = 5.0f; // Extremely Slow
+		break;
+	case TERRAIN_WALL:
+	case TERRAIN_WATER:
+		return FLT_MAX; // Impassable
+	default:
+		cost = 2.0f;
 	}
+
+	// --- UNIT SPECIALIZATIONS ---
+
+	// SCOUT: Expert explorer, moves fast through rough terrain
+	if (unitType == GameObject::GO_SCOUT) {
+		if (type == TERRAIN_FOREST) cost = 1.0f;    // No penalty in forest
+		if (type == TERRAIN_MOUNTAIN) cost = 3.0f;  // Climbs well
+		if (type == TERRAIN_MUD) cost = 2.0f;       // Light feet
+	}
+	// TANK: Heavy treads, ignores mud but slow on mountains
+	else if (unitType == GameObject::GO_TANK) {
+		if (type == TERRAIN_MUD) cost = 2.0f;       // Treads grip mud
+		if (type == TERRAIN_FOREST) cost = 4.0f;    // Too big for trees
+		if (type == TERRAIN_MOUNTAIN) cost = 6.0f;  // Too heavy
+	}
+	// WORKER: Very dependent on Roads
+	else if (unitType == GameObject::GO_WORKER || unitType == GameObject::GO_STRONG_ANT_WORKER) {
+		if (type == TERRAIN_ROAD) cost = 1.0f;
+		else if (type == TERRAIN_FLOOR) cost = 2.0f;
+		else cost += 1.0f; // Workers struggle off-road
+	}
+
+	return cost;
 }
 
 void SceneSandbox::DetectNearbyEntities(GameObject* go)
@@ -525,15 +578,16 @@ void SceneSandbox::FindNearestInjuredAlly(GameObject* go)
 }
 void SceneSandbox::GenerateMap()
 {
-	// 1. Initialize Randomly (Cellular Automata Base)
-	// Randomize walls
+	Math::InitRNG();
+
+	// 1. Initialize Base (Walls and Floor)
 	for (int i = 0; i < m_noGrid * m_noGrid; ++i) {
 		int roll = Math::RandIntMinMax(0, 100);
-		if (roll < 38) m_terrainGrid[i] = TERRAIN_WALL; // 38% Walls
+		if (roll < 35) m_terrainGrid[i] = TERRAIN_WALL;
 		else m_terrainGrid[i] = TERRAIN_FLOOR;
 	}
 
-	// 2. Cellular Automata Smoothing (Create Caves)
+	// 2. Cellular Automata (Smoothing)
 	for (int iter = 0; iter < 4; ++iter) {
 		std::vector<TERRAIN_TYPE> nextGrid = m_terrainGrid;
 		for (int y = 0; y < m_noGrid; ++y) {
@@ -546,7 +600,7 @@ void SceneSandbox::GenerateMap()
 						if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
 							if (m_terrainGrid[Get1DIndex(nx, ny)] == TERRAIN_WALL) wallCount++;
 						}
-						else { wallCount++; } // Borders are walls
+						else { wallCount++; }
 					}
 				}
 				if (wallCount > 4) nextGrid[Get1DIndex(x, y)] = TERRAIN_WALL;
@@ -560,24 +614,18 @@ void SceneSandbox::GenerateMap()
 	auto ClearArea = [&](int cx, int cy, int rad) {
 		for (int y = cy - rad; y <= cy + rad; ++y) {
 			for (int x = cx - rad; x <= cx + rad; ++x) {
-				if (IsWithinBoundary(x) && IsWithinBoundary(y)) m_terrainGrid[Get1DIndex(x, y)] = TERRAIN_FLOOR;
+				if (IsWithinBoundary(x) && IsWithinBoundary(y))
+					m_terrainGrid[Get1DIndex(x, y)] = TERRAIN_FLOOR;
 			}
 		}
 		};
 	ClearArea(3, 3, 3); // Red Base
 	ClearArea(m_noGrid - 4, m_noGrid - 4, 3); // Blue Base
 
-	// 4. Enforce Symmetry (Rotational/Diagonal)
-	EnforceSymmetry();
-
-	// 5. Ensure Connectivity between bases
+	// 4. Ensure Connectivity (Crucial before adding obstacles)
 	EnsureConnectivity();
 
-	// 6. Fill Dead Zones (Islands inaccessible from Red Base)
-	FillDeadZones();
-
-	// 7. Add Special Terrains (Mud, Water, Forest)
-	// Generate a random offset so the "biomes" shift every game
+	// 5. Add Biomes (Forest, Mud, Mountain, Water)
 	float seedX = Math::RandFloatMinMax(0.f, 100.f);
 	float seedY = Math::RandFloatMinMax(0.f, 100.f);
 
@@ -585,34 +633,43 @@ void SceneSandbox::GenerateMap()
 		for (int x = 0; x < m_noGrid; ++x) {
 			int idx = Get1DIndex(x, y);
 			if (m_terrainGrid[idx] == TERRAIN_FLOOR) {
-				// Simple noise simulation with random seed
-				float nx = (x * 0.2f) + seedX;
-				float ny = (y * 0.2f) + seedY;
-
-				// Combine a few sine waves for "blobby" shapes
+				float nx = (x * 0.15f) + seedX;
+				float ny = (y * 0.15f) + seedY;
 				float noise = sin(nx) + cos(ny) + sin(nx * 0.5f + ny * 0.5f) * 1.5f;
 
-				// FIX: Check extreme values (Water) FIRST, then Mud, then Forest
-				// Range of noise is roughly [-3.5, 3.5]
-
-				if (noise < -1.8f) {
-					m_terrainGrid[idx] = TERRAIN_WATER; // Deep lows = Water
-				}
-				else if (noise < -0.5f) {
-					m_terrainGrid[idx] = TERRAIN_MUD;   // Shallow lows = Mud
-				}
-				else if (noise > 2.0f) {
-					m_terrainGrid[idx] = TERRAIN_FOREST; // High peaks = Forest
-				}
+				if (noise < -2.0f) m_terrainGrid[idx] = TERRAIN_WATER;
+				else if (noise < -1.0f) m_terrainGrid[idx] = TERRAIN_MUD;
+				else if (noise > 2.2f) m_terrainGrid[idx] = TERRAIN_MOUNTAIN; // New High Cost
+				else if (noise > 1.2f) m_terrainGrid[idx] = TERRAIN_FOREST;
 			}
 		}
 	}
 
-	// Re-Enforce Symmetry and Clearance after terrain addition
+	// 6. Generate Roads (Connects random points to center)
+	// Simple Random Walk from center
+	int roadAgents = 4;
+	for (int i = 0; i < roadAgents; ++i) {
+		int cx = m_noGrid / 2;
+		int cy = m_noGrid / 2;
+		int life = m_noGrid * 1.5f;
+		while (life > 0) {
+			if (IsWithinBoundary(cx) && IsWithinBoundary(cy)) {
+				if (m_terrainGrid[Get1DIndex(cx, cy)] != TERRAIN_WALL &&
+					m_terrainGrid[Get1DIndex(cx, cy)] != TERRAIN_WATER) {
+					m_terrainGrid[Get1DIndex(cx, cy)] = TERRAIN_ROAD;
+				}
+			}
+			int dir = Math::RandIntMinMax(0, 3);
+			if (dir == 0) cx++; else if (dir == 1) cx--; else if (dir == 2) cy++; else cy--;
+			life--;
+		}
+	}
+
+	// 7. Final Polish
 	EnforceSymmetry();
 	ClearArea(3, 3, 2);
 	ClearArea(m_noGrid - 4, m_noGrid - 4, 2);
-	EnsureConnectivity(); // Final check to ensure Water didn't block the path
+	EnsureConnectivity(); // Re-verify
 }
 
 void SceneSandbox::EnforceSymmetry()
@@ -636,8 +693,9 @@ void SceneSandbox::EnsureConnectivity()
 	MazePt start(3, 3);
 	MazePt end(m_noGrid - 4, m_noGrid - 4);
 
-	// Use A* to check connectivity during generation
-	auto path = FindPathAStar(start, end);
+	// FIX: Pass GameObject::GO_WORKER as the reference unit for map testing.
+	// We want to ensure a standard unit can walk from base to base.
+	auto path = FindPathAStar(start, end, GameObject::GO_WORKER);
 
 	if (path.empty()) {
 		// Brute force path carving (Bresenham line) if disconnected
@@ -648,8 +706,10 @@ void SceneSandbox::EnsureConnectivity()
 		int err = dx + dy, e2;
 
 		while (true) {
+			// Force floor on the path
 			m_terrainGrid[Get1DIndex(x0, y0)] = TERRAIN_FLOOR;
-			// Mirror the carve
+
+			// Mirror the carve to maintain symmetry
 			m_terrainGrid[Get1DIndex(m_noGrid - 1 - x0, m_noGrid - 1 - y0)] = TERRAIN_FLOOR;
 
 			if (x0 == x1 && y0 == y1) break;
@@ -695,7 +755,7 @@ void SceneSandbox::FillDeadZones()
 		}
 	}
 }
-std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end)
+std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end, GameObject::GAMEOBJECT_TYPE unitType)
 {
 	std::vector<MazePt> path;
 	if (start.x == end.x && start.y == end.y) return path;
@@ -729,8 +789,7 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end)
 			break;
 		}
 
-		// Optimization: If we found a shorter way to this node already, skip
-		if (current.fCost > gScore[current.index] + (float)((abs(end.x - (current.index % m_noGrid)) + abs(end.y - (current.index / m_noGrid))))) continue;
+		if (current.fCost > gScore[current.index] + (float)((abs(end.x - (current.index % m_noGrid)) + abs(end.y - (current.index / m_noGrid))) * 2.0f)) continue;
 
 		int cx = current.index % m_noGrid;
 		int cy = current.index / m_noGrid;
@@ -739,14 +798,19 @@ std::vector<MazePt> SceneSandbox::FindPathAStar(MazePt start, MazePt end)
 			int nx = cx + dx[i]; int ny = cy + dy[i];
 			if (IsWithinBoundary(nx) && IsWithinBoundary(ny)) {
 				int nIdx = Get1DIndex(nx, ny);
-				if (IsWalkable(m_terrainGrid[nIdx])) {
-					float moveCost = GetTileCost(nx, ny);
-					float newG = gScore[current.index] + moveCost;
+
+				// Get Cost for THIS unit type
+				float tileCost = GetTileCost(nx, ny, unitType);
+
+				// If tile is effectively impassable for this unit (cost very high), skip
+				if (tileCost < 100.0f) {
+					float newG = gScore[current.index] + tileCost;
 
 					if (newG < gScore[nIdx]) {
 						gScore[nIdx] = newG;
 						parent[nIdx] = current.index;
-						float h = (float)(abs(end.x - nx) + abs(end.y - ny)); // Manhattan Heuristic
+						float h = (float)(abs(end.x - nx) + abs(end.y - ny));
+						// Weight heuristic by min cost (1.0f) to maintain admissibility
 						openList.push({ nIdx, newG + h });
 					}
 				}
