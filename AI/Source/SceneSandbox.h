@@ -13,7 +13,18 @@ public:
 	{
 		PHASE_LOGIC,
 		PHASE_ANIMATION,
-		PHASE_WAITING // Optional buffer
+		PHASE_WAITING
+	};
+
+	// New Terrain Types
+	enum TERRAIN_TYPE
+	{
+		TERRAIN_FLOOR,
+		TERRAIN_WALL,
+		TERRAIN_MUD,
+		TERRAIN_WATER,
+		TERRAIN_FOREST,
+		NUM_TERRAIN
 	};
 
 	SceneSandbox();
@@ -35,17 +46,17 @@ protected:
 	// Turn-Based Systems
 	TURN_PHASE m_currPhase;
 	int m_turnNumber;
-	float m_animationSpeed; // Speed of visual sliding
+	float m_animationSpeed;
 
-	// --- NEW: TURN UI CONTROLS ---
-	bool m_autoTurn;        // True = Timer based, False = Wait for input
-	float m_turnTimer;      // Timer for auto-turn
-	float m_turnInterval;   // Time between turns in auto mode
-	// -----------------------------
+	// UI Controls
+	bool m_autoTurn;
+	float m_turnTimer;
+	float m_turnInterval;
 
 	void ProcessTurnLogic();
 	bool ProcessTurnAnimation(double dt);
-	float GetTileCost(int x, int y) const; // Determine move cost
+	float GetTileCost(int x, int y) const;
+	float GetTerrainMovementCost(TERRAIN_TYPE type) const;
 
 	// Helper functions
 	int IsWithinBoundary(int x) const;
@@ -57,6 +68,13 @@ protected:
 	GameObject* GetNearestEnemy(Vector3 pos, int teamID, float maxRange);
 	void FindNearestInjuredAlly(GameObject* go);
 
+	// Map Generation
+	void GenerateMap();
+	void EnforceSymmetry();
+	void EnsureConnectivity();
+	void FillDeadZones();
+	bool IsWalkable(TERRAIN_TYPE type) const;
+
 	// Game state
 	std::vector<GameObject*> m_goList;
 	std::vector<std::vector<GameObject*>> m_spatialGrid;
@@ -67,8 +85,10 @@ protected:
 	float m_gridSize;
 	float m_gridOffset;
 
-	std::vector<bool> m_wallGrid;
-	std::vector<bool> m_foodGrid;
+	// Terrain Data
+	std::vector<TERRAIN_TYPE> m_terrainGrid;
+	std::vector<bool> m_foodGrid; // Kept for logic tracking
+
 	bool IsGridOccupied(int gridX, int gridY);
 	MazePt GetNearestVacantNeighbor(MazePt target, MazePt start);
 	void SpawnTrail(GameObject* startObj, GameObject* endFood, int teamID);
@@ -103,7 +123,4 @@ protected:
 	float m_updateTimer;
 	int m_updateCycle;
 	bool m_coloniesDetected;
-
-	std::vector<bool> m_bfsVisited;
-	std::vector<int> m_bfsParent;
 };

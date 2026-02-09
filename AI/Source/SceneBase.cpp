@@ -201,6 +201,12 @@ void SceneBase::Init()
 	LOAD_TEXTURE_MESH(GEO_HEALER_BLUE, "Image//Ant_Healer_Blue.tga");
 	LOAD_TEXTURE_MESH(GEO_SCOUT_BLUE, "Image//Ant_Scout_Blue.tga");
 	LOAD_TEXTURE_MESH(GEO_TANK_BLUE, "Image//Ant_Tank_Blue.tga");
+	meshList[GEO_MUD] = MeshBuilder::GenerateQuad("Mud", Color(0.5f, 0.35f, 0.2f), 1.f);
+	meshList[GEO_MUD]->textureID = LoadTGA("Image//floor.tga");
+	meshList[GEO_WATER] = MeshBuilder::GenerateQuad("Water", Color(0.2f, 0.5f, 0.9f), 1.f);
+	meshList[GEO_WATER]->textureID = LoadTGA("Image//floor.tga");
+	meshList[GEO_FOREST] = MeshBuilder::GenerateQuad("Forest", Color(0.1f, 0.5f, 0.1f), 1.f);
+	meshList[GEO_FOREST]->textureID = LoadTGA("Image//floor.tga");
 
 	bLightEnabled = false;
 }
